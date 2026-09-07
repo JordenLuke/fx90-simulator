@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import logging
 
 import uvicorn
 from fastapi import FastAPI
@@ -8,6 +9,11 @@ from . import config
 from .api.rest import create_router
 from .api.websocket import WebSocketManager, register_endpoint
 from .simulator.reader import Reader
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 def create_app() -> FastAPI:
