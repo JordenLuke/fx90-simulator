@@ -12,6 +12,7 @@ class TestConfig:
     bib_end: int = config.BIB_END
     tag_order: str = config.TAG_ORDER
     noise_percent: float = config.NOISE_PERCENT
+    noise_tags: list[str] | None = None
     max_burst_size: int = config.MAX_BURST_SIZE
     max_burst_seconds: float = config.MAX_BURST_SECONDS
     between_bursts_min: float = config.BETWEEN_BURSTS_MIN
@@ -34,6 +35,11 @@ class TestConfig:
             raise ValueError('tag_order must be "random" or "sequential"')
         if not 0 <= self.noise_percent <= 100:
             raise ValueError("noise_percent must be between 0 and 100")
+        if self.noise_tags is not None:
+            if not isinstance(self.noise_tags, list):
+                raise ValueError("noise_tags must be a JSON array of strings")
+            if any(not isinstance(tag, str) or not tag.strip() for tag in self.noise_tags):
+                raise ValueError("noise_tags must contain only non-empty strings")
         if self.max_burst_size < 1:
             raise ValueError("max_burst_size must be at least 1")
         if self.max_burst_seconds < 0:
