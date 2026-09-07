@@ -27,19 +27,31 @@ The simulator includes a deliberately simple browser-based test harness. Open:
 https://<host>:443/test/
 ```
 
-The page can configure the race without restarting the simulator and provides:
+The control panel is designed for running repeatable Ultra Tracker integration tests without editing environment variables or restarting the simulator. It provides:
 
-- runner count and bib range
-- sequential or random tag order
-- unknown/noise percentage
-- burst size and burst timing
-- artificial tag delivery delay
-- disconnect after a tag count
-- disconnect after a time interval
-- start, stop, and reset controls
-- live counters and WebSocket client count
+- **Live scan status** with a clear scanning/stopped indicator
+- **Live counters** for total tags, legitimate runner tags, noise tags, remaining runners, and connected WebSocket clients
+- **Race configuration** for runner count, bib range, tag order, noise percentage, and one-read-per-tag behavior
+- **Burst configuration** for maximum burst size, burst duration, time between bursts, and artificial tag delay
+- **Failure injection** for disconnecting the WebSocket after a specified number of tags or elapsed time
+- **Start, stop, save, and reset controls**
+- **Diagnostic JSON** containing the complete current simulator test state
+- A responsive layout that can be used from a desktop or tablet browser
 
 Settings must be changed while the reader is stopped. They are runtime test settings and are not written to environment variables or persisted between restarts.
+
+### Suggested test workflow
+
+1. Open `/test/` in a browser.
+2. Configure the runner count and burst/noise settings for the scenario.
+3. Configure failure injection if testing reconnect or recovery behavior.
+4. Click **Save Settings**.
+5. Connect Ultra Tracker to the simulator.
+6. Click **Start Scan**.
+7. Watch the live counters and WebSocket client count while Ultra Tracker processes the events.
+8. Use **Stop Scan** or **Reset** before changing the test configuration.
+
+For example, setting `disconnect_after_tags` to `190` reproduces a reader-side WebSocket disconnect after the simulator has delivered approximately 190 events. Setting `tag_delay_ms` adds artificial delivery latency without changing the underlying tag sequence.
 
 The control API is also available directly:
 
@@ -51,8 +63,6 @@ POST /test/stop
 POST /test/reset
 GET  /test/
 ```
-
-Failure controls are independent. For example, setting `disconnect_after_tags` to `190` reproduces a reader-side disconnect after the simulator has delivered 190 events. Setting `tag_delay_ms` adds artificial delivery latency without changing the underlying tag sequence.
 
 ## Automated tests
 
