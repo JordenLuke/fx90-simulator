@@ -125,6 +125,7 @@ Important settings include:
 | `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
 | `FX90_NOISE_POOL_SIZE` | `50` | Number of reusable noise tags |
 | `FX90_AUTO_START` | `false` | Start the simulated reader automatically |
+| `FX90_CORS_ORIGINS` | _(unset)_ | Comma-separated browser origins allowed for CORS; leave unset to disable CORS |
 
 ## TLS and certificate pinning
 

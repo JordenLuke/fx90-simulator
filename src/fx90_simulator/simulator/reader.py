@@ -90,6 +90,8 @@ class Reader:
         self._task = None
 
     async def _generate_race(self) -> None:
+        if config.MAX_BURST_SIZE < 1:
+            raise RuntimeError("FX90_MAX_BURST_SIZE must be at least 1")
         remaining = self._tag_generator.race_tags()
         while self.radio_active:
             if config.REPORT_EACH_TAG_ONCE and not remaining:

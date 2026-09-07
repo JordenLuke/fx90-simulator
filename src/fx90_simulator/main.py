@@ -24,12 +24,13 @@ def create_app() -> FastAPI:
             await reader.stop()
 
     app = FastAPI(title="FX90 Simulator", lifespan=lifespan)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    if config.CORS_ORIGINS:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=config.CORS_ORIGINS,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     app.include_router(create_router(reader))
     register_endpoint(app, reader, websocket_manager)

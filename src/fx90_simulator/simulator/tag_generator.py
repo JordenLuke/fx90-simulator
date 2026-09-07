@@ -35,7 +35,13 @@ class TagGenerator:
     def next_tag(self, remaining: list[str]) -> tuple[str, bool]:
         is_noise = random.random() < config.NOISE_PERCENT / 100
         if is_noise:
+            if not self.noise_tags:
+                raise RuntimeError("FX90_NOISE_POOL_SIZE must be at least 1")
             return random.choice(self.noise_tags), True
         if config.REPORT_EACH_TAG_ONCE:
+            if not remaining:
+                raise RuntimeError("FX90_RUNNER_COUNT must be at least 1")
             return remaining.pop(), False
+        if not self.tags:
+            raise RuntimeError("FX90_RUNNER_COUNT must be at least 1")
         return random.choice(self.tags), False
