@@ -1,284 +1,291 @@
 # FX90 Simulator
 
-A lightweight Python-based simulator for a Zebra FX90 RFID reader.
+A lightweight Zebra FXR90 stand-in specifically for testing Ultra Tracker's RFID interface.
 
-The simulator is intended to run on a Raspberry Pi and provide a network-based stand-in for a physical FX90 during development and testing.
+This is **not** intended to be a complete FXR90 implementation. The goal is to reproduce the externally visible behavior that Ultra Tracker consumes so the RFID interface can be tested with normal race traffic, high-volume traffic, bursts, unknown tags, and controlled failure scenarios.
 
-The project will eventually reproduce the REST and WebSocket interfaces that the application under test expects from the real reader.
+## Interface summary
 
-## Project Structure
+The simulator intentionally matches the interface used by Ultra Tracker:
+
+- HTTPS REST API on port **443**
+- WebSocket Secure (WSS) on port **443**
+- REST login with HTTP Basic authentication
+- Bearer-authenticated `/cloud/*` endpoints
+- Unauthenticated `/ws` WebSocket
+
+```text
+HTTPS REST:  https://<host>:443/cloud/...
+WSS:         wss://<host>:443/ws
+```
+
+## FXR90 / Ultra Tracker contract
+
+### REST
+
+`GET /cloud/localRestLogin` uses HTTP Basic authentication and returns:
+
+```json
+{"code":0,"message":"<bearer-token>"}
+```
+
+All other supported REST endpoints require `Authorization: Bearer <token>`.
+
+Supported endpoints:
+
+```text
+GET /cloud/localRestLogin
+GET /cloud/status
+GET /cloud/mode
+PUT /cloud/mode
+PUT /cloud/start
+PUT /cloud/stop
+```
+
+`PUT /cloud/start` accepts the request body used by Ultra Tracker (`{"doNotPersistState":true}`), starts tag generation, and returns HTTP 204. If already active it returns HTTP 422 with `start currently ongoing`.
+
+`PUT /cloud/stop` stops tag generation and returns HTTP 204.
+
+`GET /cloud/status` reports simulated reader state, including `radioActivity` and antenna state. `GET /cloud/mode` returns the simulated reader mode. `PUT /cloud/mode` accepts the request and returns HTTP 204.
+
+### WebSocket
+
+Ultra Tracker connects without a Bearer token:
+
+```text
+wss://<host>:443/ws
+```
+
+Tag events use the observed FXR90 format:
+
+```json
+{"data":{"eventNum":1,"format":"epc","idHex":"000000000000000000000001"},"timestamp":"2026-09-06T16:00:00.000-0600","type":"CUSTOM"}
+```
+
+The `idHex` format is compatible with Ultra Tracker's current parser: 20 leading zeroes followed by the decimal runner/tag number.
+
+## Simulator behavior
+
+The default configuration is designed around a typical ultra race with roughly 300–400 runners:
+
+- **400 legitimate runner tags** by default
+- Legitimate runner tags are reported **once per reader start**
+- Runner reads are grouped into bursts of up to **20 events**
+- A burst completes in approximately **one second or less**
+- **5% unknown/noise tags** by default
+- Noise tags come from a reusable pool and look like valid RFID tags but do not correspond to legitimate runners
+- Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
+
+The simulator is intended to support controlled failure modes, including WebSocket disconnects, so Ultra Tracker reconnect and health-check behavior can be tested deliberately rather than relying only on failures from a physical reader.
+
+## Project layout
 
 ```text
 fx90-simulator/
-├── app.py
-├── config.py
-├── reader.py
-├── websocket.py
+├── src/fx90_simulator/
+│   ├── api/          # REST and WebSocket interfaces
+│   ├── simulator/    # Simulated reader and tag generation
+│   ├── config.py     # Environment-based configuration
+│   └── main.py       # Application entry point
+├── scripts/          # Developer utilities
+├── certs/            # Local TLS certificates (not committed)
+├── data/             # Runner tags and captured tag data
+├── systemd/          # Native Linux service definition
+├── .devcontainer/    # VS Code Dev Container configuration
+├── Dockerfile
+├── compose.yaml
 ├── requirements.txt
-├── README.md
-├── .gitignore
-├── scripts/
-│   └── generate-certs.sh
-├── certs/
-│   └── .gitkeep
-└── data/
-    └── tags.json
+└── README.md
 ```
 
-### Files
+## Configuration
 
-- `app.py` - FastAPI application and REST/WebSocket routes.
-- `config.py` - Application configuration and certificate paths.
-- `reader.py` - Simulated reader state and tag data.
-- `websocket.py` - WebSocket connection management.
-- `data/tags.json` - Sample RFID tags used by the simulator.
-- `scripts/generate-certs.sh` - Reproducibly creates the development CA and server certificate.
+Configuration is supplied through environment variables. Docker Compose loads credentials from a local `.secrets` file.
 
-## Purpose
+Create the local secrets file from the committed template:
 
-This is a test device, not an RFID reader. It allows application development and integration testing without having a physical FX90 connected.
+```bash
+cp secrets_example .secrets
+```
 
-Planned capabilities include:
+Edit `.secrets` and set the username, password, and bearer token. Never commit `.secrets`.
 
-- Start/stop the simulated reader
-- Report reader status
-- Generate simulated RFID tag reads
-- Simulate multiple antennas
-- Simulate reader errors
-- Simulate disconnect/reconnect
-- Expose FX90-compatible REST endpoints
-- Expose FX90-compatible WebSocket events
+Important settings include:
 
-The actual FX90-compatible endpoint paths and JSON formats will be added as they are documented.
+| Variable | Default | Purpose |
+|---|---:|---|
+| `FX90_HOST` | `0.0.0.0` | Listen address |
+| `FX90_HTTPS_PORT` | `443` | REST and WSS port |
+| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags |
+| `FX90_NOISE_PERCENT` | `5` | Percentage of generated events using noise tags |
+| `FX90_MAX_BURST_SIZE` | `20` | Maximum events in one burst |
+| `FX90_MAX_BURST_SECONDS` | `0.8` | Target maximum burst duration |
+| `FX90_BETWEEN_BURSTS_MIN` | `2` | Minimum seconds between bursts |
+| `FX90_BETWEEN_BURSTS_MAX` | `8` | Maximum seconds between bursts |
+| `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
+| `FX90_NOISE_POOL_SIZE` | `50` | Number of reusable noise tags |
+| `FX90_AUTO_START` | `false` | Start the simulated reader automatically |
 
-## Raspberry Pi Setup
+## TLS and certificate pinning
 
-### 1. Install prerequisites
+The simulator uses TLS because Ultra Tracker connects to the FXR90 over HTTPS and WSS. The certificate-generation script creates a local CA and server certificate.
 
-On Raspberry Pi OS/Debian:
+Generate certificates on the target machine:
+
+```bash
+./scripts/generate-certs.sh
+```
+
+The script detects the machine's short hostname, FQDN, and primary IP and includes them in the server certificate's Subject Alternative Names. It also includes `localhost`, `fx90-simulator`, and `127.0.0.1`.
+
+If the machine's hostname is not the name you intend to use from Ultra Tracker, set an explicit certificate hostname before generating the certificate:
+
+```bash
+FX90_CERT_HOSTNAME=pi3.local ./scripts/generate-certs.sh
+```
+
+The certificate hostname/SAN is separate from Ultra Tracker's `sslCert` pin. If Ultra Tracker's certificate field rejects a hostname as invalid input, use the server certificate's serial number instead:
+
+```bash
+openssl x509 -in certs/server.crt -noout -serial
+```
+
+Enter the hexadecimal value after `serial=` as the certificate pin.
+
+Keep `ca.key` and `server.key` private. Do not commit private keys or generated certificates.
+
+## Docker deployment
+
+```bash
+git clone https://github.com/JordenLuke/fx90-simulator.git
+cd fx90-simulator
+git checkout develop
+cp secrets_example .secrets
+# Edit .secrets with your desired credentials
+./scripts/generate-certs.sh
+docker compose up -d --build
+```
+
+The container publishes HTTPS/WSS on port **443**.
+
+Check the service:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Test connectivity:
+
+```bash
+curl -k https://localhost:443/cloud/mode
+```
+
+An `Unauthorized` response without a Bearer token is expected and confirms that the simulator is reachable.
+
+Stop the container:
+
+```bash
+docker compose down
+```
+
+Update the simulator:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+## Native Raspberry Pi / Linux deployment
+
+Native deployment is useful on a Raspberry Pi or another Linux host where Docker is not desired. The examples install the simulator under `/opt/fx90-simulator`.
+
+### Install prerequisites
 
 ```bash
 sudo apt update
 sudo apt install -y git python3 python3-venv openssl
 ```
 
-Verify:
+### Install the simulator
 
 ```bash
-python3 --version
-openssl version
-```
-
-### 2. Clone the repository
-
-```bash
-git clone <repository-url>
-cd fx90-simulator
-```
-
-### 3. Create a Python virtual environment
-
-```bash
+sudo mkdir -p /opt
+sudo git clone https://github.com/JordenLuke/fx90-simulator.git /opt/fx90-simulator
+sudo chown -R "$USER":"$USER" /opt/fx90-simulator
+cd /opt/fx90-simulator
+git checkout develop
 python3 -m venv .venv
-source .venv/bin/activate
-```
-
-You should see `(.venv)` in your shell prompt.
-
-### 4. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-## Generate the Development Certificate
-
-The simulator uses HTTPS and WSS so applications can be tested against TLS rather than plain HTTP.
-
-Run:
-
-```bash
-chmod +x scripts/generate-certs.sh
+.venv/bin/pip install -r requirements.txt
 ./scripts/generate-certs.sh
 ```
 
-This creates:
+Create `/etc/fx90-simulator.env` with credentials and local configuration:
 
 ```text
-certs/
-├── ca.crt
-├── ca.key
-├── server.crt
-└── server.key
+FX90_USERNAME=admin
+FX90_PASSWORD=change-me
+FX90_BEARER_TOKEN=change-me
+FX90_HOST=0.0.0.0
+FX90_HTTPS_PORT=443
 ```
 
-The server certificate is currently valid for:
-
-- `pie3.local`
-- `localhost`
-- `127.0.0.1`
-
-If the simulator will be accessed through another hostname or IP address, update the SAN entries in `scripts/generate-certs.sh` before generating the certificate.
-
-### Important
-
-`ca.key` and `server.key` are private keys. Do not commit them to Git.
-
-Generated certificates and private keys are ignored by `.gitignore`.
-
-## Start the Simulator
-
-With the virtual environment activated:
+### Run manually
 
 ```bash
-python app.py
+cd /opt/fx90-simulator
+sudo env PYTHONPATH=/opt/fx90-simulator/src \
+  /opt/fx90-simulator/.venv/bin/python -m fx90_simulator
 ```
 
-The default HTTPS endpoint is:
+For normal operation, use the systemd service instead of running the application as root.
 
-```text
-https://pie3.local:8443
-```
+## systemd service
 
-The server listens on all network interfaces (`0.0.0.0`).
-
-You can also start it with Uvicorn:
+The repository includes `systemd/fx90-simulator.service` for running the simulator as an unprivileged service account while retaining permission to bind port 443.
 
 ```bash
-uvicorn app:app \
-  --host 0.0.0.0 \
-  --port 8443 \
-  --ssl-keyfile certs/server.key \
-  --ssl-certfile certs/server.crt
+sudo useradd --system --home /opt/fx90-simulator --shell /usr/sbin/nologin fx90-simulator
+sudo chown -R fx90-simulator:fx90-simulator /opt/fx90-simulator
+sudo cp /opt/fx90-simulator/systemd/fx90-simulator.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fx90-simulator
 ```
 
-## Test the REST API
-
-Because the certificate is self-signed, `curl` will not trust it until the CA is installed.
-
-For a quick development test, certificate verification can temporarily be disabled:
+Check logs:
 
 ```bash
-curl -k https://pie3.local:8443/reader/status
+sudo systemctl status fx90-simulator
+sudo journalctl -u fx90-simulator -f
 ```
 
-Start the reader:
+The service uses `CAP_NET_BIND_SERVICE` so it does not need to run as root merely to listen on port 443.
+
+### Update a native installation
 
 ```bash
-curl -k -X POST https://pie3.local:8443/reader/start
+cd /opt/fx90-simulator
+sudo -u fx90-simulator git pull
+sudo -u fx90-simulator .venv/bin/pip install -r requirements.txt
+sudo systemctl restart fx90-simulator
 ```
 
-Stop the reader:
+## Development container
+
+The repository includes a VS Code Dev Container configuration. Open the repository in VS Code and select **Reopen in Container**. The simulator is available on port `443`.
+
+## Capture utility
+
+`scripts/capture.py` connects to an FXR90-compatible WebSocket and records raw tag data for analysis or replay work. It can reconnect after reader-side WebSocket/TCP resets so longer captures can continue.
+
+Run it from the repository root:
 
 ```bash
-curl -k -X POST https://pie3.local:8443/reader/stop
+python3 scripts/capture.py
 ```
 
-## WebSocket
+Captured data is stored under `data/`.
 
-The initial WebSocket endpoint is:
+## Security notes
 
-```text
-wss://pie3.local:8443/ws
-```
-
-When a client connects, the simulator sends an initial status message.
-
-The WebSocket implementation is intentionally minimal at this stage. RFID tag events and the exact FX90 WebSocket protocol will be added after the real reader messages are documented.
-
-## Configuration
-
-Settings can be changed with environment variables.
-
-For example:
-
-```bash
-export FX90_HTTPS_PORT=8443
-export FX90_HOST=0.0.0.0
-python app.py
-```
-
-Available settings:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `FX90_HOST` | `0.0.0.0` | Listen address |
-| `FX90_HTTPS_PORT` | `8443` | HTTPS/WebSocket port |
-| `FX90_SERVER_CERT` | `certs/server.crt` | Server certificate |
-| `FX90_SERVER_KEY` | `certs/server.key` | Server private key |
-| `FX90_TAGS_FILE` | `data/tags.json` | Simulated tag file |
-| `FX90_RELOAD` | `false` | Enable development reload |
-
-## Trusting the CA
-
-For normal TLS validation, install `certs/ca.crt` as a trusted development CA on the machine running the application under test.
-
-Do not disable certificate validation in the application as the permanent solution. Using the local CA allows TLS behavior to be tested normally.
-
-The exact trust-store procedure depends on the operating system and application.
-
-## Current REST API
-
-The initial simulator provides:
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/reader/status` | Get simulated reader status |
-| `POST` | `/reader/start` | Start simulated reader |
-| `POST` | `/reader/stop` | Stop simulated reader |
-
-These are temporary simulator endpoints. They will be changed to match the actual FX90 API once the real request/response examples are provided.
-
-## Current WebSocket API
-
-Initial endpoint:
-
-```text
-wss://pie3.local:8443/ws
-```
-
-On connection:
-
-```json
-{
-  "type": "status",
-  "data": {
-    "state": "STOPPED",
-    "timestamp": "..."
-  }
-}
-```
-
-The final WebSocket message format will be based on the actual FX90 messages.
-
-## Development Workflow
-
-A typical development session:
-
-```bash
-cd fx90-simulator
-source .venv/bin/activate
-python app.py
-```
-
-Then use the application under test to connect to:
-
-```text
-https://pie3.local:8443
-```
-
-and:
-
-```text
-wss://pie3.local:8443/ws
-```
-
-As FX90 API examples become available, update the simulator to reproduce the real interface.
-
-## Design Goal
-
-Keep the simulator intentionally simple.
-
-The goal is not to reproduce the internal implementation of a Zebra FX90. The goal is to reproduce the externally visible behavior that our application depends on.
-
-That makes this project useful as a repeatable development and integration-test device.
+This simulator is intended for controlled test networks. The default credentials are development defaults and should be changed before exposing the simulator to an untrusted network.
