@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 .venv/
+venv/
+env/
 *.log
 .secrets
 certs/*.key
@@ -9,5 +11,10 @@ certs/*.csr
 certs/*.cnf
 certs/*.srl
 .pytest_cache/
+.coverage
 .mypy_cache/
 .ruff_cache/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

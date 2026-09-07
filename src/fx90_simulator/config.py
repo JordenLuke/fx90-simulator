@@ -54,6 +54,6 @@ BETWEEN_BURSTS_MAX = _get_float("FX90_BETWEEN_BURSTS_MAX", "8", minimum=0)
 if BETWEEN_BURSTS_MAX < BETWEEN_BURSTS_MIN:
     raise ValueError("FX90_BETWEEN_BURSTS_MAX must be >= FX90_BETWEEN_BURSTS_MIN")
 REPORT_EACH_TAG_ONCE = os.getenv("FX90_REPORT_EACH_TAG_ONCE", "true").lower() == "true"
-NOISE_POOL_SIZE = _get_int("FX90_NOISE_POOL_SIZE", "50", minimum=1)
+NOISE_POOL_SIZE = _get_int("FX90_NOISE_POOL_SIZE", "50", minimum=0)
 AUTO_START = os.getenv("FX90_AUTO_START", "false").lower() == "true"
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("FX90_CORS_ORIGINS", "").split(",") if origin.strip()]
