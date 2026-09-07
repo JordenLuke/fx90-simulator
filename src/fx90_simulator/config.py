@@ -56,4 +56,5 @@ if BETWEEN_BURSTS_MAX < BETWEEN_BURSTS_MIN:
 REPORT_EACH_TAG_ONCE = os.getenv("FX90_REPORT_EACH_TAG_ONCE", "true").lower() == "true"
 NOISE_POOL_SIZE = _get_int("FX90_NOISE_POOL_SIZE", "50", minimum=0)
 AUTO_START = os.getenv("FX90_AUTO_START", "false").lower() == "true"
+HEARTBEAT_SECONDS = _get_float("FX90_HEARTBEAT_SECONDS", "5", minimum=0.1)
 CORS_ORIGINS = [origin.strip() for origin in os.getenv("FX90_CORS_ORIGINS", "").split(",") if origin.strip()]

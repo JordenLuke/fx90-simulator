@@ -22,3 +22,4 @@ services:
       FX90_REPORT_EACH_TAG_ONCE: "true"
       FX90_NOISE_POOL_SIZE: "50"
       FX90_AUTO_START: "false"
+      FX90_HEARTBEAT_SECONDS: "5"
