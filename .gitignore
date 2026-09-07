@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 .venv/
 *.log
+.secrets
 certs/*.key
 certs/*.crt
 .pytest_cache/
