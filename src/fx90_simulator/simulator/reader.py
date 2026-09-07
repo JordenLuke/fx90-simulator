@@ -117,7 +117,13 @@ class Reader:
 
     async def _generate_race(self) -> None:
         cfg = self.test_config
-        generator = TagGenerator(cfg.bib_start, cfg.bib_end, cfg.runner_count, cfg.tag_order)
+        generator = TagGenerator(
+            cfg.bib_start,
+            cfg.bib_end,
+            cfg.runner_count,
+            cfg.tag_order,
+            noise_tags=cfg.noise_tags,
+        )
         remaining = generator.race_tags()
         race_complete_logged = False
         try:
