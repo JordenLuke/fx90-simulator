@@ -18,7 +18,10 @@ def create_app() -> FastAPI:
     async def lifespan(_: FastAPI):
         if config.AUTO_START:
             await reader.start()
-        yield
+        try:
+            yield
+        finally:
+            await reader.stop()
 
     app = FastAPI(title="FX90 Simulator", lifespan=lifespan)
     app.add_middleware(
