@@ -2,31 +2,90 @@
 
 A lightweight Zebra FXR90 stand-in specifically for testing Ultra Tracker's RFID interface.
 
-REST: `GET /cloud/localRestLogin`, `GET /cloud/status`, `GET /cloud/mode`, `PUT /cloud/mode`, `PUT /cloud/start`, `PUT /cloud/stop`.
+The simulator intentionally implements only the interfaces consumed by Ultra Tracker:
 
-WebSocket: `wss://<host>:<port>/ws` with no Bearer token, matching Ultra Tracker.
+- HTTPS REST API on port **443**
+- WebSocket Secure (WSS) on port **443**
+- REST login with Basic authentication
+- Bearer-authenticated `/cloud/*` endpoints
+- Unauthenticated `/ws` WebSocket, matching Ultra Tracker
 
-Observed tag event:
+## Project layout
 
-```json
-{"data":{"eventNum":1,"format":"epc","idHex":"000000000000000000000001"},"timestamp":"2026-09-06T16:00:00.000-0600","type":"CUSTOM"}
+```text
+src/fx90_simulator/
+├── api/          # REST and WebSocket interfaces
+├── simulator/    # Simulated reader and tag generation
+├── config.py     # Environment-based configuration
+└── main.py       # Application entry point
+
+scripts/          # Developer utilities
+certs/            # Local TLS certificates (not committed)
+data/             # Runner tags and captured tag data
 ```
 
-Defaults: 400 legitimate runners, each reported once; up to 20 events per burst; burst duration under about one second; 5% unknown/noise tags.
+## Run locally
 
-Run locally:
+Generate a development certificate:
 
 ```bash
 ./scripts/generate-certs.sh
-python3 -m pip install -r requirements.txt
-python3 app.py
 ```
 
-Or with Docker:
+Install dependencies:
+
+```bash
+python3 -m pip install -r requirements.txt
+```
+
+Run the simulator:
+
+```bash
+PYTHONPATH=src python3 -m fx90_simulator.main
+```
+
+The simulator listens on `https://0.0.0.0:443` by default.
+
+## Run with Docker
 
 ```bash
 ./scripts/generate-certs.sh
 docker compose up --build
 ```
 
-Configuration is in `compose.yaml` environment variables.
+## Default behavior
+
+- 400 legitimate runner tags
+- Each legitimate tag is reported once per reader start
+- Bursts contain up to 20 events
+- Burst duration is approximately one second or less
+- 5% unknown/noise tags
+- Reader is stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
+
+## Configuration
+
+Configuration is supplied through environment variables in `compose.yaml`.
+
+Important settings include:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `FX90_HTTPS_PORT` | `443` | REST and WSS port |
+| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags |
+| `FX90_NOISE_PERCENT` | `5` | Percentage of generated events using noise tags |
+| `FX90_MAX_BURST_SIZE` | `20` | Maximum events in one burst |
+| `FX90_MAX_BURST_SECONDS` | `0.8` | Target burst duration |
+| `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
+| `FX90_AUTO_START` | `false` | Start the simulated reader automatically |
+
+## FXR90-compatible endpoints
+
+```text
+GET /cloud/localRestLogin
+GET /cloud/status
+GET /cloud/mode
+PUT /cloud/mode
+PUT /cloud/start
+PUT /cloud/stop
+WSS /ws
+```

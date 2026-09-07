@@ -1,1 +1,12 @@
-{"name":"FX90 Simulator","dockerComposeFile":"../compose.yaml","service":"fx90-simulator","workspaceFolder":"/app","shutdownAction":"stopCompose","customizations":{"vscode":{"extensions":["ms-python.python","ms-python.vscode-pylance"]}}}
+{
+  "name": "FX90 Simulator",
+  "dockerComposeFile": "../compose.yaml",
+  "service": "fx90-simulator",
+  "workspaceFolder": "/app",
+  "shutdownAction": "stopCompose",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python", "ms-python.vscode-pylance"]
+    }
+  }
+}

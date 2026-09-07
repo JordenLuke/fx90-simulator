@@ -2,7 +2,8 @@ services:
   fx90-simulator:
     build: .
     container_name: fx90-simulator
-    ports: ["443:443"]
+    ports:
+      - "443:443"
     volumes:
       - ./certs:/app/certs:ro
       - ./data:/app/data
