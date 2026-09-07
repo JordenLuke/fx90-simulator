@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +11,16 @@ from .simulator.reader import Reader
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="FX90 Simulator")
+    reader = Reader()
+    websocket_manager = WebSocketManager()
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        if config.AUTO_START:
+            await reader.start()
+        yield
+
+    app = FastAPI(title="FX90 Simulator", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -17,15 +28,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    reader = Reader()
-    websocket_manager = WebSocketManager()
     app.include_router(create_router(reader))
     register_endpoint(app, reader, websocket_manager)
-
-    @app.on_event("startup")
-    async def startup() -> None:
-        if config.AUTO_START:
-            await reader.start()
 
     return app
 
@@ -33,7 +37,7 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
-if __name__ == "__main__":
+def main() -> None:
     uvicorn.run(
         app,
         host=config.HOST,
@@ -41,3 +45,7 @@ if __name__ == "__main__":
         ssl_certfile=str(config.CERT_FILE),
         ssl_keyfile=str(config.KEY_FILE),
     )
+
+
+if __name__ == "__main__":
+    main()
