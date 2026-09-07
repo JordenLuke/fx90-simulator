@@ -11,10 +11,15 @@ class TagGenerator:
             raise ValueError("runner_count cannot exceed the configured bib range")
         self.runner_count = runner_count
         self.tag_order = tag_order
-        self.noise_tags = list(noise_tags) if noise_tags else [
+        self._custom_noise_remaining = list(noise_tags) if noise_tags else []
+        self.noise_tags = [
             self._tag_for_bib(bib_end + number)
             for number in range(1, noise_pool_size + 1)
         ]
+
+    @property
+    def custom_noise_remaining(self) -> int:
+        return len(self._custom_noise_remaining)
 
     @staticmethod
     def _tag_for_bib(bib: int) -> str:
@@ -29,6 +34,8 @@ class TagGenerator:
     def next_tag(self, remaining: list[str], noise_percent: float, report_each_tag_once: bool) -> tuple[str, bool]:
         is_noise = random.random() < noise_percent / 100
         if is_noise:
+            if self._custom_noise_remaining:
+                return self._custom_noise_remaining.pop(0), True
             if not self.noise_tags:
                 raise RuntimeError("noise tag pool must contain at least one tag when noise is enabled")
             return random.choice(self.noise_tags), True
