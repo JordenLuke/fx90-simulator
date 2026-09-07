@@ -1,0 +1,22 @@
+[Unit]
+Description=FX90 Simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fx90-simulator
+Group=fx90-simulator
+WorkingDirectory=/opt/fx90-simulator
+EnvironmentFile=-/etc/fx90-simulator.env
+Environment=PYTHONPATH=/opt/fx90-simulator/src
+Environment=FX90_HOST=0.0.0.0
+Environment=FX90_HTTPS_PORT=443
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+ExecStart=/opt/fx90-simulator/.venv/bin/python -m fx90_simulator
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

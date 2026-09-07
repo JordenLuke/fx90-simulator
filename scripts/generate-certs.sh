@@ -20,6 +20,13 @@ CERT_HOSTNAME="${FX90_CERT_HOSTNAME:-$HOST_FQDN}"
 if [[ -z "$CERT_HOSTNAME" || "$CERT_HOSTNAME" == "localhost" ]]; then
     CERT_HOSTNAME="$HOST_SHORT"
 fi
+CERT_CN="$CERT_HOSTNAME"
+if (( ${#CERT_CN} > 64 )); then
+    CERT_CN="$HOST_SHORT"
+fi
+if [[ -z "$CERT_CN" || "$CERT_CN" == "localhost" || ${#CERT_CN} -gt 64 ]]; then
+    CERT_CN="fx90-simulator"
+fi
 
 echo "Generating FX90 Simulator certificates..."
 
@@ -46,7 +53,7 @@ req_extensions = req_ext
 C = US
 ST = Utah
 O = FX90 Simulator
-CN = ${CERT_HOSTNAME}
+CN = ${CERT_CN}
 
 [req_ext]
 subjectAltName = @alt_names
@@ -57,11 +64,13 @@ DNS.2 = fx90-simulator
 DNS.3 = ${HOST_SHORT}
 EOF
 
-if [[ -n "$HOST_FQDN" && "$HOST_FQDN" != "$HOST_SHORT" && "$HOST_FQDN" != "localhost" ]]; then
-    printf 'DNS.4 = %s\n' "$HOST_FQDN" >> "$OPENSSL_CNF"
-    IP_INDEX=5
-else
-    IP_INDEX=4
+DNS_INDEX=4
+if [[ -n "$CERT_HOSTNAME" && "$CERT_HOSTNAME" != "localhost" && "$CERT_HOSTNAME" != "fx90-simulator" && "$CERT_HOSTNAME" != "$HOST_SHORT" ]]; then
+    printf 'DNS.%s = %s\n' "$DNS_INDEX" "$CERT_HOSTNAME" >> "$OPENSSL_CNF"
+    DNS_INDEX=$((DNS_INDEX + 1))
+fi
+if [[ -n "$HOST_FQDN" && "$HOST_FQDN" != "$HOST_SHORT" && "$HOST_FQDN" != "localhost" && "$HOST_FQDN" != "fx90-simulator" && "$HOST_FQDN" != "$CERT_HOSTNAME" ]]; then
+    printf 'DNS.%s = %s\n' "$DNS_INDEX" "$HOST_FQDN" >> "$OPENSSL_CNF"
 fi
 
 if [[ -n "$HOST_IP" ]]; then
