@@ -13,7 +13,10 @@ services:
     environment:
       FX90_HOST: "0.0.0.0"
       FX90_HTTPS_PORT: "443"
+      FX90_BIB_START: "1"
+      FX90_BIB_END: "429"
       FX90_RUNNER_COUNT: "400"
+      FX90_TAG_ORDER: "random"
       FX90_NOISE_PERCENT: "5"
       FX90_MAX_BURST_SIZE: "20"
       FX90_MAX_BURST_SECONDS: "0.8"
