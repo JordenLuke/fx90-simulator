@@ -48,10 +48,22 @@ The simulator listens on `https://0.0.0.0:443` by default.
 
 ## Run with Docker
 
+Create the local secrets file from the committed template first:
+
+```bash
+cp secrets_example .secrets
+```
+
+Edit `.secrets` and replace the example credentials with your local values. **Do not commit `.secrets`.**
+
+Then generate the development certificate and start the simulator:
+
 ```bash
 ./scripts/generate-certs.sh
 docker compose up --build
 ```
+
+Generated TLS certificate and key files under `certs/` are ignored by Git. The `certs/.gitkeep` file keeps the directory in the repository.
 
 ## Default behavior
 
@@ -64,7 +76,9 @@ docker compose up --build
 
 ## Configuration
 
-Configuration is supplied through environment variables in `compose.yaml`.
+Credentials are loaded from the local `.secrets` file when using Docker Compose. The committed `secrets_example` file documents the required values.
+
+Other runtime configuration is supplied through environment variables in `compose.yaml`.
 
 Important settings include:
 
