@@ -19,6 +19,60 @@ HTTPS REST:  https://<host>:443/cloud/...
 WSS:         wss://<host>:443/ws
 ```
 
+## Test control panel
+
+The simulator includes a deliberately simple browser-based test harness. Open:
+
+```text
+https://<host>:443/test/
+```
+
+The page can configure the race without restarting the simulator and provides:
+
+- runner count and bib range
+- sequential or random tag order
+- unknown/noise percentage
+- burst size and burst timing
+- artificial tag delivery delay
+- disconnect after a tag count
+- disconnect after a time interval
+- start, stop, and reset controls
+- live counters and WebSocket client count
+
+Settings must be changed while the reader is stopped. They are runtime test settings and are not written to environment variables or persisted between restarts.
+
+The control API is also available directly:
+
+```text
+GET  /test/status
+PUT  /test/config
+POST /test/start
+POST /test/stop
+POST /test/reset
+GET  /test/
+```
+
+Failure controls are independent. For example, setting `disconnect_after_tags` to `190` reproduces a reader-side disconnect after the simulator has delivered 190 events. Setting `tag_delay_ms` adds artificial delivery latency without changing the underlying tag sequence.
+
+## Automated tests
+
+Install dependencies and run the complete suite:
+
+```bash
+pytest
+```
+
+Useful subsets:
+
+```bash
+pytest -m unit
+pytest -m integration
+pytest -m websocket
+pytest -m stress
+```
+
+The stress marker is reserved for tests that intentionally generate large/high-volume traffic so those tests do not have to run on every small code change.
+
 ## FXR90 / Ultra Tracker contract
 
 ### REST
@@ -78,17 +132,18 @@ The default configuration is designed around a typical ultra race with roughly 3
 - Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
 - Periodic heartbeat logs report scan state, counts, remaining runners, and connected WebSocket clients
 
-The simulator is intended to support controlled failure modes, including WebSocket disconnects, so Ultra Tracker reconnect and health-check behavior can be tested deliberately rather than relying only on failures from a physical reader.
+The simulator supports deliberate WebSocket disconnects and artificial delivery delay so Ultra Tracker reconnect, health-check, timeout, and throughput behavior can be tested deliberately rather than relying only on failures from a physical reader.
 
 ## Project layout
 
 ```text
 fx90-simulator/
 ├── src/fx90_simulator/
-│   ├── api/          # REST and WebSocket interfaces
-│   ├── simulator/    # Simulated reader and tag generation
+│   ├── api/          # REST, WebSocket, and test-control interfaces
+│   ├── simulator/    # Simulated reader, test controls, and tag generation
 │   ├── config.py     # Environment-based configuration
 │   └── main.py       # Application entry point
+├── tests/            # Automated unit and integration tests
 ├── scripts/          # Developer utilities
 ├── certs/            # Local TLS certificates (not committed)
 ├── data/             # Captured tag data and runtime data
