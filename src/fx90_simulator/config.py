@@ -35,17 +35,29 @@ def _get_float(
         raise ValueError(f"{name} must be <= {maximum}")
     return value
 
+
 HOST = os.getenv("FX90_HOST", "0.0.0.0")
 HTTPS_PORT = _get_int("FX90_HTTPS_PORT", "443", minimum=1, maximum=65535)
 CERT_FILE = Path(os.getenv("FX90_CERT_FILE", str(CERT_DIR / "server.crt")))
 KEY_FILE = Path(os.getenv("FX90_KEY_FILE", str(CERT_DIR / "server.key")))
-TAGS_FILE = Path(os.getenv("FX90_TAGS_FILE", str(DATA_DIR / "tags.json")))
 
 USERNAME = os.getenv("FX90_USERNAME", "admin")
 PASSWORD = os.getenv("FX90_PASSWORD", "admin")
 BEARER_TOKEN = os.getenv("FX90_BEARER_TOKEN", "fx90-simulator-token")
 
+BIB_START = _get_int("FX90_BIB_START", "1", minimum=1)
+BIB_END = _get_int("FX90_BIB_END", "429", minimum=1)
+if BIB_END < BIB_START:
+    raise ValueError("FX90_BIB_END must be >= FX90_BIB_START")
+
 RUNNER_COUNT = _get_int("FX90_RUNNER_COUNT", "400", minimum=1)
+if RUNNER_COUNT > BIB_END - BIB_START + 1:
+    raise ValueError("FX90_RUNNER_COUNT cannot exceed the configured bib range")
+
+TAG_ORDER = os.getenv("FX90_TAG_ORDER", "random").lower()
+if TAG_ORDER not in {"random", "sequential"}:
+    raise ValueError('FX90_TAG_ORDER must be "random" or "sequential"')
+
 NOISE_PERCENT = _get_float("FX90_NOISE_PERCENT", "5", minimum=0, maximum=100)
 MAX_BURST_SIZE = _get_int("FX90_MAX_BURST_SIZE", "20", minimum=1)
 MAX_BURST_SECONDS = _get_float("FX90_MAX_BURST_SECONDS", "0.8", minimum=0)
