@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
+COPY scripts ./scripts
 COPY data ./data
 COPY certs ./certs
 
@@ -13,4 +14,4 @@ ENV PYTHONPATH=/app/src
 
 EXPOSE 443
 
-CMD ["python", "-m", "fx90_simulator.main"]
+CMD ["python", "-m", "fx90_simulator"]

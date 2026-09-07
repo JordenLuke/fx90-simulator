@@ -2,6 +2,7 @@ services:
   fx90-simulator:
     build: .
     container_name: fx90-simulator
+    restart: unless-stopped
     ports:
       - "443:443"
     volumes:
@@ -16,4 +17,8 @@ services:
       FX90_NOISE_PERCENT: "5"
       FX90_MAX_BURST_SIZE: "20"
       FX90_MAX_BURST_SECONDS: "0.8"
+      FX90_BETWEEN_BURSTS_MIN: "2"
+      FX90_BETWEEN_BURSTS_MAX: "8"
       FX90_REPORT_EACH_TAG_ONCE: "true"
+      FX90_NOISE_POOL_SIZE: "50"
+      FX90_AUTO_START: "false"
