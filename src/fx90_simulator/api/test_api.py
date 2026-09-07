@@ -5,43 +5,264 @@ from ..simulator.reader import Reader
 
 
 CONTROL_PANEL = """<!doctype html>
-<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>FX90 Simulator Test Control</title>
-<style>body{font-family:system-ui,sans-serif;max-width:900px;margin:30px auto;padding:0 16px}fieldset{margin:12px 0;padding:16px}label{display:inline-block;width:230px;margin:5px 0}input,select{width:130px;padding:5px}button{padding:8px 14px;margin:4px}.status{font-family:monospace;background:#f4f4f4;padding:12px;white-space:pre-wrap}.danger{border-color:#c33}</style></head>
-<body><h1>FX90 Simulator</h1>
-<div class='status' id='status'>Loading...</div>
-<fieldset><legend>Race</legend>
-<label>Runner count <input id='runner_count' type='number'></label>
-<label>Bib start <input id='bib_start' type='number'></label>
-<label>Bib end <input id='bib_end' type='number'></label><br>
-<label>Tag order <select id='tag_order'><option>random</option><option>sequential</option></select></label>
-<label>Noise % <input id='noise_percent' type='number' step='0.1'></label>
-<label>Report each tag once <input id='report_each_tag_once' type='checkbox'></label>
-</fieldset>
-<fieldset><legend>Burst behavior</legend>
-<label>Max burst size <input id='max_burst_size' type='number'></label>
-<label>Max burst seconds <input id='max_burst_seconds' type='number' step='0.01'></label>
-<label>Between bursts min <input id='between_bursts_min' type='number' step='0.1'></label>
-<label>Between bursts max <input id='between_bursts_max' type='number' step='0.1'></label>
-<label>Tag delay (ms) <input id='tag_delay_ms' type='number' step='0.1'></label>
-</fieldset>
-<fieldset class='danger'><legend>Failure injection</legend>
-<label>Disconnect after tags <input id='disconnect_after_tags' type='number'></label>
-<label>Disconnect after seconds <input id='disconnect_after_seconds' type='number' step='0.1'></label>
-</fieldset>
-<button onclick='save()'>Save settings</button><button onclick='start()'>Start Scan</button><button onclick='stop()'>Stop Scan</button><button onclick='reset()'>Reset</button>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    background: #f3f7fb;
+    color: #1f2937;
+}
+header {
+    background: #1565c0;
+    color: white;
+    padding: 22px 24px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.15);
+}
+header h1 { margin: 0 0 4px; font-size: 25px; }
+header p { margin: 0; opacity: .9; }
+.container { max-width: 1100px; margin: 24px auto; padding: 0 18px 40px; }
+.card {
+    background: white;
+    border: 1px solid #d6e2f0;
+    border-radius: 9px;
+    padding: 20px;
+    margin-bottom: 18px;
+    box-shadow: 0 2px 6px rgba(30,70,110,.06);
+}
+.card h2 { color: #1565c0; margin: 0 0 16px; font-size: 19px; }
+.grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; }
+.field label { display: block; font-weight: 600; margin-bottom: 5px; font-size: 14px; }
+input, select {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid #b8c7d9;
+    border-radius: 5px;
+    background: white;
+    color: #1f2937;
+    font: inherit;
+}
+input:focus, select:focus { outline: 2px solid #90caf9; border-color: #1565c0; }
+.checkbox { display: flex; align-items: center; gap: 8px; height: 38px; }
+.checkbox input { width: auto; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+button {
+    border: 0;
+    border-radius: 5px;
+    padding: 10px 17px;
+    background: #1565c0;
+    color: white;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+button:hover { background: #0d47a1; }
+button.stop { background: #c62828; }
+button.stop:hover { background: #8e0000; }
+button.reset { background: #546e7a; }
+button.reset:hover { background: #37474f; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.status-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 7px;
+    margin-bottom: 18px;
+    font-weight: 700;
+}
+.status-banner.running { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+.status-banner.stopped { background: #eef2f6; color: #455a64; border: 1px solid #cfd8dc; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
+.counters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.counter { background: #f7faff; border: 1px solid #d6e2f0; border-radius: 7px; padding: 13px; }
+.counter .value { display: block; font-size: 24px; font-weight: 700; color: #1565c0; }
+.counter .label { font-size: 12px; color: #607d8b; text-transform: uppercase; letter-spacing: .04em; }
+.danger { border-color: #efb8b8; }
+.danger h2 { color: #b71c1c; }
+.hint { color: #607d8b; font-size: 13px; margin: 6px 0 0; }
+#error { color: #b71c1c; margin-top: 10px; font-weight: 600; }
+pre {
+    margin: 0;
+    background: #f5f8fb;
+    border: 1px solid #d6e2f0;
+    border-radius: 6px;
+    padding: 14px;
+    overflow-x: auto;
+    color: #263238;
+    font-size: 12px;
+}
+@media (max-width: 760px) {
+    .grid, .counters { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 500px) {
+    .grid, .counters { grid-template-columns: 1fr; }
+    .container { padding: 0 12px 30px; }
+}
+</style>
+</head>
+<body>
+<header>
+    <h1>FX90 Simulator Test Control</h1>
+    <p>Configure and run RFID load, burst, and failure-injection tests.</p>
+</header>
+<div class='container'>
+    <div class='status-banner stopped' id='status_banner'>
+        <span class='status-dot'></span><span id='scan_state'>Stopped</span>
+    </div>
+
+    <div class='card'>
+        <h2>Live Test Status</h2>
+        <div class='counters'>
+            <div class='counter'><span class='value' id='tags_sent'>0</span><span class='label'>Tags sent</span></div>
+            <div class='counter'><span class='value' id='good_tags_sent'>0</span><span class='label'>Runner tags</span></div>
+            <div class='counter'><span class='value' id='noise_tags_sent'>0</span><span class='label'>Noise tags</span></div>
+            <div class='counter'><span class='value' id='remaining'>0</span><span class='label'>Remaining</span></div>
+            <div class='counter'><span class='value' id='clients'>0</span><span class='label'>WebSocket clients</span></div>
+        </div>
+    </div>
+
+    <div class='card'>
+        <h2>Race Configuration</h2>
+        <div class='grid'>
+            <div class='field'><label for='runner_count'>Runner count</label><input id='runner_count' type='number' min='1'></div>
+            <div class='field'><label for='tag_order'>Tag order</label><select id='tag_order'><option value='random'>Random</option><option value='sequential'>Sequential</option></select></div>
+            <div class='field'><label for='bib_start'>Bib start</label><input id='bib_start' type='number' min='1'></div>
+            <div class='field'><label for='bib_end'>Bib end</label><input id='bib_end' type='number' min='1'></div>
+            <div class='field'><label for='noise_percent'>Unknown/noise %</label><input id='noise_percent' type='number' min='0' max='100' step='0.1'></div>
+            <div class='field checkbox'><input id='report_each_tag_once' type='checkbox'><label for='report_each_tag_once'>Report each runner tag once</label></div>
+        </div>
+        <p class='hint'>Settings are runtime-only and can only be changed while the reader is stopped.</p>
+    </div>
+
+    <div class='card'>
+        <h2>Burst Behavior</h2>
+        <div class='grid'>
+            <div class='field'><label for='max_burst_size'>Maximum burst size</label><input id='max_burst_size' type='number' min='1'></div>
+            <div class='field'><label for='max_burst_seconds'>Maximum burst duration (seconds)</label><input id='max_burst_seconds' type='number' min='0' step='0.01'></div>
+            <div class='field'><label for='between_bursts_min'>Minimum time between bursts (seconds)</label><input id='between_bursts_min' type='number' min='0' step='0.1'></div>
+            <div class='field'><label for='between_bursts_max'>Maximum time between bursts (seconds)</label><input id='between_bursts_max' type='number' min='0' step='0.1'></div>
+            <div class='field'><label for='tag_delay_ms'>Artificial tag delay (ms)</label><input id='tag_delay_ms' type='number' min='0' step='0.1'></div>
+        </div>
+    </div>
+
+    <div class='card danger'>
+        <h2>Failure Injection</h2>
+        <div class='grid'>
+            <div class='field'><label for='disconnect_after_tags'>Disconnect after tags (0 = disabled)</label><input id='disconnect_after_tags' type='number' min='0'></div>
+            <div class='field'><label for='disconnect_after_seconds'>Disconnect after seconds (0 = disabled)</label><input id='disconnect_after_seconds' type='number' min='0' step='0.1'></div>
+        </div>
+        <p class='hint'>These controls deliberately close the WebSocket so Ultra Tracker reconnect and recovery behavior can be tested.</p>
+    </div>
+
+    <div class='card'>
+        <h2>Controls</h2>
+        <div class='actions'>
+            <button id='save_button' onclick='save()'>Save Settings</button>
+            <button id='start_button' onclick='start()'>Start Scan</button>
+            <button class='stop' onclick='stop()'>Stop Scan</button>
+            <button class='reset' onclick='reset()'>Reset</button>
+        </div>
+        <div id='error'></div>
+    </div>
+
+    <div class='card'>
+        <h2>Diagnostic Details</h2>
+        <pre id='status_json'>Loading...</pre>
+    </div>
+</div>
 <script>
-const ids=['runner_count','bib_start','bib_end','tag_order','noise_percent','report_each_tag_once','max_burst_size','max_burst_seconds','between_bursts_min','between_bursts_max','disconnect_after_tags','disconnect_after_seconds','tag_delay_ms'];
-function setForm(c){ids.forEach(id=>{let e=document.getElementById(id);e.type==='checkbox'?e.checked=!!c[id]:e.value=c[id]})}
-function form(){let c={};ids.forEach(id=>{let e=document.getElementById(id);c[id]=e.type==='checkbox'?e.checked:(e.type==='number'?Number(e.value):e.value)});return c}
-async function load(){let r=await fetch('/test/status');let s=await r.json();setForm(s.config);render(s)}
-async function save(){let r=await fetch('/test/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(form())});let x=await r.json();if(!r.ok)alert(x.detail||'Unable to save');else render(x)}
-async function start(){let r=await fetch('/test/start',{method:'POST'});let x=await r.json();if(!r.ok)alert(x.detail||'Unable to start');render(x)}
-async function stop(){let r=await fetch('/test/stop',{method:'POST'});render(await r.json())}
-async function reset(){let r=await fetch('/test/reset',{method:'POST'});let x=await r.json();setForm(x.config);render(x)}
-function render(s){document.getElementById('status').textContent=JSON.stringify(s,null,2)}
-load();setInterval(load,1000);
-</script></body></html>"""
+const ids = ['runner_count','bib_start','bib_end','tag_order','noise_percent','report_each_tag_once','max_burst_size','max_burst_seconds','between_bursts_min','between_bursts_max','disconnect_after_tags','disconnect_after_seconds','tag_delay_ms'];
+let initialized = false;
+
+function setForm(c) {
+    ids.forEach(id => {
+        const e = document.getElementById(id);
+        if (e.type === 'checkbox') e.checked = !!c[id];
+        else e.value = c[id];
+    });
+}
+
+function form() {
+    const c = {};
+    ids.forEach(id => {
+        const e = document.getElementById(id);
+        c[id] = e.type === 'checkbox' ? e.checked : (e.type === 'number' ? Number(e.value) : e.value);
+    });
+    return c;
+}
+
+function render(s) {
+    const running = !!s.scanning;
+    const banner = document.getElementById('status_banner');
+    banner.className = 'status-banner ' + (running ? 'running' : 'stopped');
+    document.getElementById('scan_state').textContent = running ? 'Scanning' : 'Stopped';
+    document.getElementById('tags_sent').textContent = s.tags_sent ?? 0;
+    document.getElementById('good_tags_sent').textContent = s.good_tags_sent ?? 0;
+    document.getElementById('noise_tags_sent').textContent = s.noise_tags_sent ?? 0;
+    document.getElementById('remaining').textContent = s.remaining ?? 0;
+    document.getElementById('clients').textContent = s.clients ?? 0;
+    document.getElementById('status_json').textContent = JSON.stringify(s, null, 2);
+    document.getElementById('start_button').disabled = running;
+    document.getElementById('save_button').disabled = running;
+}
+
+function showError(message) { document.getElementById('error').textContent = message || ''; }
+
+async function request(url, options) {
+    const r = await fetch(url, options);
+    let x = {};
+    try { x = await r.json(); } catch (_) {}
+    if (!r.ok) throw new Error(x.detail || 'Request failed');
+    return x;
+}
+
+async function load() {
+    try {
+        const s = await request('/test/status');
+        if (!initialized) { setForm(s.config); initialized = true; }
+        render(s);
+        showError('');
+    } catch (e) { showError(e.message); }
+}
+
+async function save() {
+    try {
+        render(await request('/test/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(form())}));
+        showError('');
+    } catch (e) { showError(e.message); }
+}
+
+async function start() {
+    try { render(await request('/test/start', {method:'POST'})); showError(''); }
+    catch (e) { showError(e.message); }
+}
+
+async function stop() {
+    try { render(await request('/test/stop', {method:'POST'})); showError(''); }
+    catch (e) { showError(e.message); }
+}
+
+async function reset() {
+    try {
+        const s = await request('/test/reset', {method:'POST'});
+        setForm(s.config);
+        render(s);
+        showError('');
+    } catch (e) { showError(e.message); }
+}
+
+load();
+setInterval(load, 1000);
+</script>
+</body>
+</html>"""
 
 
 def create_test_router(reader: Reader) -> APIRouter:
