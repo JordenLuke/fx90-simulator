@@ -30,6 +30,7 @@ class Reader:
         self._noise_tags_sent = 0
         self._started_at = 0.0
         self._last_error = ""
+        self._custom_noise_remaining = 0
 
     def register_sender(self, sender: Sender, closer: Closer) -> None:
         self._senders[sender] = closer
@@ -48,6 +49,7 @@ class Reader:
             "good_tags_sent": self._good_tags_sent,
             "noise_tags_sent": self._noise_tags_sent,
             "remaining": max(0, remaining),
+            "custom_noise_remaining": self._custom_noise_remaining,
             "elapsed_seconds": round(time.monotonic() - self._started_at, 1) if self._started_at else 0,
             "event_num": self.event_num,
             "last_error": self._last_error,
@@ -64,6 +66,7 @@ class Reader:
         self._tags_sent = 0
         self._good_tags_sent = 0
         self._noise_tags_sent = 0
+        self._custom_noise_remaining = 0
         self._last_error = ""
 
     def status(self) -> dict:
@@ -90,11 +93,12 @@ class Reader:
         self.test_config.validate()
         self.radio_active = True
         self._tags_sent = self._good_tags_sent = self._noise_tags_sent = 0
+        self._custom_noise_remaining = len(self.test_config.noise_tags or [])
         self._last_error = ""
         self._started_at = time.monotonic()
         self._task = asyncio.create_task(self._generate_race())
         self._heartbeat_task = asyncio.create_task(self._heartbeat())
-        logger.info("[FX90] SCANNING | sent=0 good=0 noise=0 clients=%d", len(self._senders))
+        logger.info("[FX90] SCANNING | sent=0 good=0 noise=0 custom_noise=%d clients=%d", self._custom_noise_remaining, len(self._senders))
 
     async def stop(self) -> None:
         self.radio_active = False
@@ -107,13 +111,13 @@ class Reader:
                 except asyncio.CancelledError:
                     pass
             setattr(self, task_name, None)
-        logger.info("[FX90] STOPPED | sent=%d good=%d noise=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, len(self._senders))
+        logger.info("[FX90] STOPPED | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
 
     async def _heartbeat(self) -> None:
         while self.radio_active:
             await asyncio.sleep(config.HEARTBEAT_SECONDS)
             if self.radio_active:
-                logger.info("[FX90] SCANNING | sent=%d good=%d noise=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, len(self._senders))
+                logger.info("[FX90] SCANNING | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
 
     async def _generate_race(self) -> None:
         cfg = self.test_config
@@ -131,7 +135,7 @@ class Reader:
                 if cfg.report_each_tag_once and not remaining:
                     if not race_complete_logged:
                         race_complete_logged = True
-                        logger.info("[FX90] RACE COMPLETE | sent=%d good=%d noise=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, len(self._senders))
+                        logger.info("[FX90] RACE COMPLETE | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
                     await asyncio.sleep(1)
                     continue
 
@@ -144,6 +148,7 @@ class Reader:
                         await self._disconnect_all("disconnect-after-tags")
                         return
                     tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, cfg.report_each_tag_once)
+                    self._custom_noise_remaining = generator.custom_noise_remaining
                     self.event_num += 1
                     self._tags_sent += 1
                     if is_noise:
