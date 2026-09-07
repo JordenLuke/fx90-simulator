@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 
 from .. import config
 
@@ -24,8 +24,12 @@ class TestConfig:
     def validate(self) -> None:
         if self.bib_start < 1 or self.bib_end < self.bib_start:
             raise ValueError("bib range is invalid")
-        if self.runner_count < 1 or self.runner_count > self.bib_end - self.bib_start + 1:
-            raise ValueError("runner_count must fit inside the bib range")
+        available_bibs = self.bib_end - self.bib_start + 1
+        if self.runner_count < 1 or self.runner_count > available_bibs:
+            raise ValueError(
+                f"runner_count ({self.runner_count}) exceeds the available bibs "
+                f"({available_bibs}) in range {self.bib_start}-{self.bib_end}"
+            )
         if self.tag_order not in {"random", "sequential"}:
             raise ValueError('tag_order must be "random" or "sequential"')
         if not 0 <= self.noise_percent <= 100:
@@ -44,13 +48,18 @@ class TestConfig:
             raise ValueError("tag_delay_ms must be >= 0")
 
     def update(self, values: dict) -> None:
-        allowed = set(asdict(self))
+        allowed = {field.name for field in fields(self)}
         unknown = set(values) - allowed
         if unknown:
             raise ValueError(f"unknown test settings: {', '.join(sorted(unknown))}")
+
+        candidate = TestConfig(**asdict(self))
+        for key, value in values.items():
+            setattr(candidate, key, value)
+        candidate.validate()
+
         for key, value in values.items():
             setattr(self, key, value)
-        self.validate()
 
     def to_dict(self) -> dict:
         return asdict(self)
