@@ -25,7 +25,10 @@ def register_endpoint(app, reader: Reader, manager: WebSocketManager) -> None:
         async def sender(message: str) -> None:
             await websocket.send_text(message)
 
-        reader.register_sender(sender)
+        async def closer() -> None:
+            await websocket.close(code=1011, reason="FX90 simulator test disconnect")
+
+        reader.register_sender(sender, closer)
         try:
             while True:
                 await websocket.receive()
