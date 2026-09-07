@@ -59,7 +59,7 @@ wss://<host>:443/ws
 Tag events use the observed FXR90 format:
 
 ```json
-{"data":{"eventNum":1,"format":"epc","idHex":"000000000000000000000001"},"timestamp":"2026-09-06T16:00:00.000-0600","type":"CUSTOM"}
+{"data":{"eventNum":1,"format":"epc","idHex":"000000000000000000001"},"timestamp":"2026-09-06T16:00:00.000-0600","type":"CUSTOM"}
 ```
 
 The `idHex` format is compatible with Ultra Tracker's current parser: 20 leading zeroes followed by the decimal runner/tag number.
@@ -69,12 +69,14 @@ The `idHex` format is compatible with Ultra Tracker's current parser: 20 leading
 The default configuration is designed around a typical ultra race with roughly 300–400 runners:
 
 - **400 legitimate runner tags** by default
-- Legitimate runner tags are reported **once per reader start**
+- Legitimate runner tags are generated from the configured bib range and reported **once per reader start**
+- Runner reads can be sent in **sequential or randomized order**
 - Runner reads are grouped into bursts of up to **20 events**
 - A burst completes in approximately **one second or less**
 - **5% unknown/noise tags** by default
-- Noise tags come from a reusable pool and look like valid RFID tags but do not correspond to legitimate runners
+- Noise tags use the same valid RFID format but use bib numbers outside the configured runner range
 - Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
+- Periodic heartbeat logs report scan state, counts, remaining runners, and connected WebSocket clients
 
 The simulator is intended to support controlled failure modes, including WebSocket disconnects, so Ultra Tracker reconnect and health-check behavior can be tested deliberately rather than relying only on failures from a physical reader.
 
@@ -89,7 +91,7 @@ fx90-simulator/
 │   └── main.py       # Application entry point
 ├── scripts/          # Developer utilities
 ├── certs/            # Local TLS certificates (not committed)
-├── data/             # Runner tags and captured tag data
+├── data/             # Captured tag data and runtime data
 ├── systemd/          # Native Linux service definition
 ├── .devcontainer/    # VS Code Dev Container configuration
 ├── Dockerfile
@@ -116,7 +118,10 @@ Important settings include:
 |---|---:|---|
 | `FX90_HOST` | `0.0.0.0` | Listen address |
 | `FX90_HTTPS_PORT` | `443` | REST and WSS port |
-| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags |
+| `FX90_BIB_START` | `1` | First possible legitimate bib number |
+| `FX90_BIB_END` | `429` | Last possible legitimate bib number |
+| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags per reader start |
+| `FX90_TAG_ORDER` | `random` | Legitimate tag order: `random` or `sequential` |
 | `FX90_NOISE_PERCENT` | `5` | Percentage of generated events using noise tags |
 | `FX90_MAX_BURST_SIZE` | `20` | Maximum events in one burst |
 | `FX90_MAX_BURST_SECONDS` | `0.8` | Target maximum burst duration |
@@ -125,7 +130,19 @@ Important settings include:
 | `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
 | `FX90_NOISE_POOL_SIZE` | `50` | Number of reusable noise tags |
 | `FX90_AUTO_START` | `false` | Start the simulated reader automatically |
+| `FX90_HEARTBEAT_SECONDS` | `5` | Interval between diagnostic heartbeat logs |
 | `FX90_CORS_ORIGINS` | _(unset)_ | Comma-separated browser origins allowed for CORS; leave unset to disable CORS |
+
+Legitimate RFID values are derived directly from the bib number. For example:
+
+```text
+Bib 1   -> 000000000000000000001
+Bib 10  -> 000000000000000000010
+Bib 190 -> 000000000000000000190
+Bib 429 -> 000000000000000000429
+```
+
+No runner/tag data file is required.
 
 ## TLS and certificate pinning
 
