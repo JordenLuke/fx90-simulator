@@ -1,0 +1,19 @@
+services:
+  fx90-simulator:
+    build: .
+    container_name: fx90-simulator
+    ports: ["443:443"]
+    volumes:
+      - ./certs:/app/certs:ro
+      - ./data:/app/data
+    environment:
+      FX90_HOST: "0.0.0.0"
+      FX90_HTTPS_PORT: "443"
+      FX90_USERNAME: "admin"
+      FX90_PASSWORD: "admin"
+      FX90_BEARER_TOKEN: "fx90-simulator-token"
+      FX90_RUNNER_COUNT: "400"
+      FX90_NOISE_PERCENT: "5"
+      FX90_MAX_BURST_SIZE: "20"
+      FX90_MAX_BURST_SECONDS: "0.8"
+      FX90_REPORT_EACH_TAG_ONCE: "true"
