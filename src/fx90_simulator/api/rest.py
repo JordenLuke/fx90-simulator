@@ -24,7 +24,7 @@ async def login(authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Invalid Basic authentication") from exc
     if username != config.USERNAME or password != config.PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid username or password")
-    return {"message": config.BEARER_TOKEN}
+    return {"code": 0, "message": config.BEARER_TOKEN}
 
 
 def create_router(reader: Reader) -> APIRouter:
