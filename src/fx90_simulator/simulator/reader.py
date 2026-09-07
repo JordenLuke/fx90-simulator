@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -8,6 +9,7 @@ from .events import create_tag_event
 from .tag_generator import TagGenerator
 
 Sender = Callable[[str], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class Reader:
@@ -17,14 +19,20 @@ class Reader:
         self.radio_active = False
         self.event_num = 0
         self._task: asyncio.Task[None] | None = None
+        self._heartbeat_task: asyncio.Task[None] | None = None
         self._senders: set[Sender] = set()
         self._tag_generator = TagGenerator()
+        self._tags_sent = 0
+        self._good_tags_sent = 0
+        self._noise_tags_sent = 0
 
     def register_sender(self, sender: Sender) -> None:
         self._senders.add(sender)
+        logger.info("[FX90] WebSocket CONNECTED | clients=%d", len(self._senders))
 
     def unregister_sender(self, sender: Sender) -> None:
         self._senders.discard(sender)
+        logger.info("[FX90] WebSocket DISCONNECTED | clients=%d", len(self._senders))
 
     def status(self) -> dict:
         return {
@@ -77,7 +85,12 @@ class Reader:
         if self.radio_active:
             return
         self.radio_active = True
+        self._tags_sent = 0
+        self._good_tags_sent = 0
+        self._noise_tags_sent = 0
         self._task = asyncio.create_task(self._generate_race())
+        self._heartbeat_task = asyncio.create_task(self._heartbeat())
+        logger.info("[FX90] SCANNING | sent=0 good=0 noise=0 clients=%d", len(self._senders))
 
     async def stop(self) -> None:
         self.radio_active = False
@@ -88,13 +101,50 @@ class Reader:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+        self._heartbeat_task = None
+        logger.info(
+            "[FX90] STOPPED | sent=%d good=%d noise=%d clients=%d",
+            self._tags_sent,
+            self._good_tags_sent,
+            self._noise_tags_sent,
+            len(self._senders),
+        )
+
+    async def _heartbeat(self) -> None:
+        while self.radio_active:
+            await asyncio.sleep(config.HEARTBEAT_SECONDS)
+            if not self.radio_active:
+                return
+            logger.info(
+                "[FX90] SCANNING | sent=%d good=%d noise=%d clients=%d",
+                self._tags_sent,
+                self._good_tags_sent,
+                self._noise_tags_sent,
+                len(self._senders),
+            )
 
     async def _generate_race(self) -> None:
         if config.MAX_BURST_SIZE < 1:
             raise RuntimeError("FX90_MAX_BURST_SIZE must be at least 1")
         remaining = self._tag_generator.race_tags()
+        race_complete_logged = False
         while self.radio_active:
             if config.REPORT_EACH_TAG_ONCE and not remaining:
+                if not race_complete_logged:
+                    race_complete_logged = True
+                    logger.info(
+                        "[FX90] RACE COMPLETE | sent=%d good=%d noise=%d clients=%d",
+                        self._tags_sent,
+                        self._good_tags_sent,
+                        self._noise_tags_sent,
+                        len(self._senders),
+                    )
                 await asyncio.sleep(1)
                 continue
 
@@ -104,8 +154,13 @@ class Reader:
             )
 
             for _ in range(count):
-                tag_id, _ = self._tag_generator.next_tag(remaining)
+                tag_id, is_noise = self._tag_generator.next_tag(remaining)
                 self.event_num += 1
+                self._tags_sent += 1
+                if is_noise:
+                    self._noise_tags_sent += 1
+                else:
+                    self._good_tags_sent += 1
                 await self._broadcast(create_tag_event(self.event_num, tag_id))
                 if count > 1:
                     await asyncio.sleep(
