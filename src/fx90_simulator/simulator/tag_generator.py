@@ -17,7 +17,7 @@ class TagGenerator:
         if config.TAGS_FILE.exists():
             import json
 
-            data = json.loads(config.TAGS_FILE.read_text())
+            data = json.loads(config.TAGS_FILE.read_text(encoding="utf-8"))
             tags = data.get("tags", []) if isinstance(data, dict) else data
         else:
             tags = []

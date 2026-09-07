@@ -6,21 +6,37 @@ DATA_DIR = PROJECT_ROOT / "data"
 CERT_DIR = PROJECT_ROOT / "certs"
 
 
-def _get_int(name: str, default: str, *, minimum: int | None = None) -> int:
+def _get_int(
+    name: str,
+    default: str,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
     value = int(os.getenv(name, default))
     if minimum is not None and value < minimum:
         raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
     return value
 
 
-def _get_float(name: str, default: str, *, minimum: float | None = None) -> float:
+def _get_float(
+    name: str,
+    default: str,
+    *,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> float:
     value = float(os.getenv(name, default))
     if minimum is not None and value < minimum:
         raise ValueError(f"{name} must be >= {minimum}")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} must be <= {maximum}")
     return value
 
 HOST = os.getenv("FX90_HOST", "0.0.0.0")
-HTTPS_PORT = int(os.getenv("FX90_HTTPS_PORT", "443"))
+HTTPS_PORT = _get_int("FX90_HTTPS_PORT", "443", minimum=1, maximum=65535)
 CERT_FILE = Path(os.getenv("FX90_CERT_FILE", str(CERT_DIR / "server.crt")))
 KEY_FILE = Path(os.getenv("FX90_KEY_FILE", str(CERT_DIR / "server.key")))
 TAGS_FILE = Path(os.getenv("FX90_TAGS_FILE", str(DATA_DIR / "tags.json")))
@@ -30,7 +46,7 @@ PASSWORD = os.getenv("FX90_PASSWORD", "admin")
 BEARER_TOKEN = os.getenv("FX90_BEARER_TOKEN", "fx90-simulator-token")
 
 RUNNER_COUNT = _get_int("FX90_RUNNER_COUNT", "400", minimum=1)
-NOISE_PERCENT = _get_float("FX90_NOISE_PERCENT", "5", minimum=0)
+NOISE_PERCENT = _get_float("FX90_NOISE_PERCENT", "5", minimum=0, maximum=100)
 MAX_BURST_SIZE = _get_int("FX90_MAX_BURST_SIZE", "20", minimum=1)
 MAX_BURST_SECONDS = _get_float("FX90_MAX_BURST_SECONDS", "0.8", minimum=0)
 BETWEEN_BURSTS_MIN = _get_float("FX90_BETWEEN_BURSTS_MIN", "2", minimum=0)
