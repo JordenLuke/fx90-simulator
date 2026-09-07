@@ -6,29 +6,26 @@ from fastapi.responses import JSONResponse, Response
 from .. import config
 from ..simulator.reader import Reader
 
-router = APIRouter()
-
 
 def require_bearer(authorization: str | None) -> None:
     if authorization != f"Bearer {config.BEARER_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
-@router.get("/cloud/localRestLogin")
-async def login(authorization: str | None = Header(default=None)):
-    if not authorization or not authorization.startswith("Basic "):
-        raise HTTPException(status_code=401, detail="Basic authentication required")
-    try:
-        username, password = base64.b64decode(authorization[6:]).decode().split(":", 1)
-    except Exception as exc:
-        raise HTTPException(status_code=401, detail="Invalid Basic authentication") from exc
-    if username != config.USERNAME or password != config.PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    return {"code": 0, "message": config.BEARER_TOKEN}
-
-
 def create_router(reader: Reader) -> APIRouter:
     api = APIRouter()
+
+    @api.get("/cloud/localRestLogin")
+    async def login(authorization: str | None = Header(default=None)):
+        if not authorization or not authorization.startswith("Basic "):
+            raise HTTPException(status_code=401, detail="Basic authentication required")
+        try:
+            username, password = base64.b64decode(authorization[6:]).decode().split(":", 1)
+        except Exception as exc:
+            raise HTTPException(status_code=401, detail="Invalid Basic authentication") from exc
+        if username != config.USERNAME or password != config.PASSWORD:
+            raise HTTPException(status_code=401, detail="Invalid username or password") from None
+        return {"code": 0, "message": config.BEARER_TOKEN}
 
     @api.get("/cloud/status")
     async def status(authorization: str | None = Header(default=None)):
