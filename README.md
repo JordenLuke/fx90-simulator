@@ -284,6 +284,12 @@ Run it from the repository root:
 python3 scripts/capture.py
 ```
 
+For self-signed simulator certificates, provide the generated CA certificate explicitly:
+
+```bash
+python3 scripts/capture.py --cafile certs/ca.crt
+```
+
 Captured data is stored under `data/`.
 
 ## Security notes
