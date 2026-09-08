@@ -9,7 +9,7 @@ CONTROL_PANEL = """<!doctype html>
 <head>
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>FX90 Simulator Test Control</title>
+<title>RFID Interface Test Harness</title>
 <style>
 :root { color-scheme: light; }
 * { box-sizing: border-box; }
@@ -39,7 +39,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .status-banner.running { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
 .status-banner.stopped { background: #eef2f6; color: #455a64; border: 1px solid #cfd8dc; }
 .status-dot { width: 12px; height: 12px; border-radius: 50%; background: currentColor; }
-.counters { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.counters { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
 .counter { background: #f7faff; border: 1px solid #d6e2f0; border-radius: 7px; padding: 13px; }
 .counter .value { display: block; font-size: 24px; font-weight: 700; color: #1565c0; }
 .counter .label { font-size: 12px; color: #607d8b; text-transform: uppercase; letter-spacing: .04em; }
@@ -48,14 +48,15 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .hint { color: #607d8b; font-size: 13px; margin: 6px 0 0; }
 #error { color: #b71c1c; margin-top: 10px; font-weight: 600; }
 pre { margin: 0; background: #f5f8fb; border: 1px solid #d6e2f0; border-radius: 6px; padding: 14px; overflow-x: auto; color: #263238; font-size: 12px; }
-@media (max-width: 760px) { .grid, .counters { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 900px) { .counters { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 500px) { .grid, .counters { grid-template-columns: 1fr; } .container { padding: 0 12px 30px; } }
 </style>
 </head>
 <body>
 <header>
-    <h1>FX90 Simulator Test Control</h1>
-    <p>Configure and run RFID load, burst, and failure-injection tests.</p>
+    <h1>RFID Interface Test Harness</h1>
+    <p>Test the Ultra Tracker RFID interface using the Zebra FXR90 simulator.</p>
 </header>
 <div class='container'>
     <div class='status-banner stopped' id='status_banner'><span class='status-dot'></span><span id='scan_state'>Stopped</span></div>
@@ -67,6 +68,7 @@ pre { margin: 0; background: #f5f8fb; border: 1px solid #d6e2f0; border-radius: 
             <div class='counter'><span class='value' id='good_tags_sent'>0</span><span class='label'>Runner tags</span></div>
             <div class='counter'><span class='value' id='noise_tags_sent'>0</span><span class='label'>Noise tags</span></div>
             <div class='counter'><span class='value' id='remaining'>0</span><span class='label'>Remaining</span></div>
+            <div class='counter'><span class='value' id='custom_noise_remaining'>0</span><span class='label'>Custom noise remaining</span></div>
             <div class='counter'><span class='value' id='clients'>0</span><span class='label'>WebSocket clients</span></div>
         </div>
     </div>
@@ -84,7 +86,7 @@ pre { margin: 0; background: #f5f8fb; border: 1px solid #d6e2f0; border-radius: 
         <div class='field' style='margin-top:14px'>
             <label for='noise_tags'>Custom noise tags (JSON array)</label>
             <textarea id='noise_tags' spellcheck='false' placeholder='[\n  "00000000000000000000015A",\n  "00000000000000000000015B"\n]'></textarea>
-            <p class='hint'>Optional. When supplied, noise reads are selected from this exact list. Leave empty to use the generated noise pool. These may be valid-looking or intentionally malformed tags for parser testing.</p>
+            <p class='hint'>Optional. Custom noise reads are consumed once, in list order, then the generated noise pool is used. Tags may be intentionally malformed for parser testing.</p>
         </div>
         <p class='hint'>Settings are runtime-only and can only be changed while the reader is stopped.</p>
     </div>
@@ -169,6 +171,7 @@ function render(s) {
     document.getElementById('good_tags_sent').textContent = s.good_tags_sent ?? 0;
     document.getElementById('noise_tags_sent').textContent = s.noise_tags_sent ?? 0;
     document.getElementById('remaining').textContent = s.remaining ?? 0;
+    document.getElementById('custom_noise_remaining').textContent = s.custom_noise_remaining ?? 0;
     document.getElementById('clients').textContent = s.clients ?? 0;
     document.getElementById('status_json').textContent = JSON.stringify(s, null, 2);
     document.getElementById('start_button').disabled = running;

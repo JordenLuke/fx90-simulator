@@ -2,7 +2,7 @@ import random
 
 
 class TagGenerator:
-    """Generates FXR90-compatible RFID tags from decimal bib numbers."""
+    """Generates reader-compatible RFID tags from decimal bib numbers."""
 
     def __init__(self, bib_start: int, bib_end: int, runner_count: int, tag_order: str,
                  noise_tags: list[str] | None = None, noise_pool_size: int = 50) -> None:
