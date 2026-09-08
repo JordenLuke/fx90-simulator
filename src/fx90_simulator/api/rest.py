@@ -53,7 +53,10 @@ def create_router(reader: Reader) -> APIRouter:
         require_bearer(authorization)
         if reader.radio_active:
             return JSONResponse(status_code=422, content={"message": "start currently ongoing"})
-        await reader.start()
+        try:
+            await reader.start()
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"message": str(exc)})
         return Response(status_code=204)
 
     @api.put("/cloud/stop")

@@ -19,6 +19,70 @@ HTTPS REST:  https://<host>:443/cloud/...
 WSS:         wss://<host>:443/ws
 ```
 
+## Test control panel
+
+The simulator includes a deliberately simple browser-based test harness. Open:
+
+```text
+https://<host>:443/test/
+```
+
+The control panel is designed for running repeatable Ultra Tracker integration tests without editing environment variables or restarting the simulator. It provides:
+
+- **Live scan status** with a clear scanning/stopped indicator
+- **Live counters** for total tags, legitimate runner tags, noise tags, remaining runners, and connected WebSocket clients
+- **Race configuration** for runner count, bib range, tag order, noise percentage, and one-read-per-tag behavior
+- **Burst configuration** for maximum burst size, burst duration, time between bursts, and artificial tag delay
+- **Failure injection** for disconnecting the WebSocket after a specified number of tags or elapsed time
+- **Start, stop, save, and reset controls**
+- **Diagnostic JSON** containing the complete current simulator test state
+- A responsive layout that can be used from a desktop or tablet browser
+
+Settings must be changed while the reader is stopped. They are runtime test settings and are not written to environment variables or persisted between restarts.
+
+### Suggested test workflow
+
+1. Open `/test/` in a browser.
+2. Configure the runner count and burst/noise settings for the scenario.
+3. Configure failure injection if testing reconnect or recovery behavior.
+4. Click **Save Settings**.
+5. Connect Ultra Tracker to the simulator.
+6. Click **Start Scan**.
+7. Watch the live counters and WebSocket client count while Ultra Tracker processes the events.
+8. Use **Stop Scan** or **Reset** before changing the test configuration.
+
+For example, setting `disconnect_after_tags` to `190` reproduces a reader-side WebSocket disconnect after the simulator has delivered approximately 190 events. Setting `tag_delay_ms` adds artificial delivery latency without changing the underlying tag sequence.
+
+The control API is also available directly:
+
+```text
+GET  /test/status
+PUT  /test/config
+POST /test/start
+POST /test/stop
+POST /test/reset
+GET  /test/
+```
+
+## Automated tests
+
+Install dependencies and run the complete suite:
+
+```bash
+pytest
+```
+
+Useful subsets:
+
+```bash
+pytest -m unit
+pytest -m integration
+pytest -m websocket
+pytest -m stress
+```
+
+The stress marker is reserved for tests that intentionally generate large/high-volume traffic so those tests do not have to run on every small code change.
+
 ## FXR90 / Ultra Tracker contract
 
 ### REST
@@ -78,17 +142,18 @@ The default configuration is designed around a typical ultra race with roughly 3
 - Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
 - Periodic heartbeat logs report scan state, counts, remaining runners, and connected WebSocket clients
 
-The simulator is intended to support controlled failure modes, including WebSocket disconnects, so Ultra Tracker reconnect and health-check behavior can be tested deliberately rather than relying only on failures from a physical reader.
+The simulator supports deliberate WebSocket disconnects and artificial delivery delay so Ultra Tracker reconnect, health-check, timeout, and throughput behavior can be tested deliberately rather than relying only on failures from a physical reader.
 
 ## Project layout
 
 ```text
 fx90-simulator/
 ├── src/fx90_simulator/
-│   ├── api/          # REST and WebSocket interfaces
-│   ├── simulator/    # Simulated reader and tag generation
+│   ├── api/          # REST, WebSocket, and test-control interfaces
+│   ├── simulator/    # Simulated reader, test controls, and tag generation
 │   ├── config.py     # Environment-based configuration
 │   └── main.py       # Application entry point
+├── tests/            # Automated unit and integration tests
 ├── scripts/          # Developer utilities
 ├── certs/            # Local TLS certificates (not committed)
 ├── data/             # Captured tag data and runtime data
