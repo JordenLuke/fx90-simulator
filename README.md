@@ -1,284 +1,325 @@
-# FX90 Simulator
+# RFID Interface Test Harness
 
-A lightweight Python-based simulator for a Zebra FX90 RFID reader.
+A lightweight RFID interface test harness for **Ultra Tracker**, with the **Zebra FXR90** as the first simulated reader implementation.
 
-The simulator is intended to run on a Raspberry Pi and provide a network-based stand-in for a physical FX90 during development and testing.
+The project is intentionally **not** a complete Zebra FXR90 implementation. It reproduces the externally visible behavior that Ultra Tracker consumes so the RFID interface can be tested with normal race traffic, high-volume traffic, bursts, unknown tags, reconnects, and controlled failure scenarios.
 
-The project will eventually reproduce the REST and WebSocket interfaces that the application under test expects from the real reader.
+The architecture is intended to make additional reader simulators possible later:
 
-## Project Structure
+```text
+Ultra Tracker
+     │
+     │ RFID interface
+     ▼
+RFID Interface Test Harness
+     │
+     ├── Zebra FXR90 simulator   ← current implementation
+     ├── Future reader simulator
+     └── Future reader simulator
+```
+
+## Current reader implementation
+
+The current implementation simulates the subset of the **Zebra FXR90** interface used by Ultra Tracker:
+
+- HTTPS REST API on port **443**
+- WebSocket Secure (WSS) on port **443**
+- REST login with HTTP Basic authentication
+- Bearer-authenticated `/cloud/*` endpoints
+- Unauthenticated `/ws` WebSocket
+
+```text
+HTTPS REST:  https://<host>:443/cloud/...
+WSS:         wss://<host>:443/ws
+```
+
+The FXR90-specific REST paths, WebSocket payload format, and `FX90_*` environment variables are retained because they are part of the current Ultra Tracker integration contract.
+
+## Test control panel
+
+The harness includes a browser-based control panel for repeatable integration and stress testing:
+
+```text
+https://<host>:443/test/
+```
+
+It provides:
+
+- **Live scan status**
+- **Live counters** for total tags, legitimate runner tags, noise tags, remaining runners, custom noise remaining, and WebSocket clients
+- **Race configuration** for runner count, bib range, tag order, noise percentage, and one-read-per-tag behavior
+- **Custom noise tags** supplied as a JSON array
+- **Burst configuration** for burst size, duration, time between bursts, and artificial tag delay
+- **Failure injection** for WebSocket disconnects after a tag count or elapsed time
+- **Start, stop, save, and reset controls**
+- **Diagnostic JSON** containing the complete current test state
+
+Settings are runtime-only and can only be changed while the simulated reader is stopped.
+
+### Custom noise tags
+
+Custom noise tags are treated as a one-shot queue. When a noise event occurs, the next supplied custom tag is sent in list order. Once the list is exhausted, the generated noise pool is used.
+
+This is useful for parser and error-handling tests because custom values are not required to look like valid RFID tags. For example:
+
+```json
+[
+  "00000000000000000000015A",
+  "00000000000000000000015B",
+  "00000000000000000000015C"
+]
+```
+
+The **Custom noise remaining** counter shows how many supplied values are still waiting to be consumed. Because noise selection is probabilistic, the queue is not a fixed number of events; it drains only when noise events are selected.
+
+### Suggested test workflow
+
+1. Open `/test/` in a browser.
+2. Configure the race, burst, noise, and failure-injection settings.
+3. Click **Save Settings**.
+4. Connect Ultra Tracker to the harness.
+5. Click **Start Scan**.
+6. Watch the live counters and WebSocket client count.
+7. Use **Stop Scan** or **Reset** before changing the configuration.
+
+For example, setting `disconnect_after_tags` to `190` deliberately closes the WebSocket after approximately 190 delivered events, allowing Ultra Tracker reconnect and recovery behavior to be tested against a repeatable failure.
+
+The test control API is also available directly:
+
+```text
+GET  /test/status
+PUT  /test/config
+POST /test/start
+POST /test/stop
+POST /test/reset
+GET  /test/
+```
+
+## Automated tests
+
+Install dependencies and run the complete suite:
+
+```bash
+pytest
+```
+
+Useful subsets:
+
+```bash
+pytest -m unit
+pytest -m integration
+pytest -m websocket
+pytest -m stress
+```
+
+The `stress` marker is reserved for tests that intentionally generate large or high-volume traffic so those tests do not have to run on every small code change.
+
+## Zebra FXR90 / Ultra Tracker contract
+
+This section documents the current reader-specific compatibility contract. It is deliberately kept separate from the generic test-harness purpose so additional reader implementations can be added without changing the overall project description.
+
+### REST
+
+`GET /cloud/localRestLogin` uses HTTP Basic authentication and returns:
+
+```json
+{"code":0,"message":"<bearer-token>"}
+```
+
+All other supported REST endpoints require `Authorization: Bearer <token>`.
+
+Supported endpoints:
+
+```text
+GET /cloud/localRestLogin
+GET /cloud/status
+GET /cloud/mode
+PUT /cloud/mode
+PUT /cloud/start
+PUT /cloud/stop
+```
+
+`PUT /cloud/start` accepts the request body used by Ultra Tracker (`{"doNotPersistState":true}`), starts tag generation, and returns HTTP 204. If already active it returns HTTP 422 with `start currently ongoing`.
+
+`PUT /cloud/stop` stops tag generation and returns HTTP 204.
+
+`GET /cloud/status` reports simulated reader state, including `radioActivity` and antenna state. `GET /cloud/mode` returns the simulated reader mode. `PUT /cloud/mode` accepts the request and returns HTTP 204.
+
+### WebSocket
+
+Ultra Tracker connects without a Bearer token:
+
+```text
+wss://<host>:443/ws
+```
+
+Tag events use the observed FXR90 format:
+
+```json
+{"data":{"eventNum":1,"format":"epc","idHex":"000000000000000000001"},"timestamp":"2026-09-06T16:00:00.000-0600","type":"CUSTOM"}
+```
+
+The `idHex` format is compatible with Ultra Tracker's current parser: 20 leading zeroes followed by the decimal runner/tag number.
+
+## Simulated traffic behavior
+
+The default configuration is designed around a typical ultra race with roughly 300–400 runners:
+
+- **400 legitimate runner tags** by default
+- Legitimate runner tags are generated from the configured bib range and reported **once per reader start**
+- Runner reads can be sent in **sequential or randomized order**
+- Runner reads are grouped into bursts of up to **20 events**
+- A burst targets approximately **one second or less**
+- **5% unknown/noise tags** by default
+- Generated noise uses bib numbers outside the configured runner range
+- Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
+- Periodic heartbeat logs report scan state, counts, remaining runners, custom noise remaining, and connected WebSocket clients
+
+The harness also supports deliberate WebSocket disconnects and artificial delivery delay so reconnect, health-check, timeout, and throughput behavior can be tested deliberately rather than relying only on failures from a physical reader.
+
+## Project layout
 
 ```text
 fx90-simulator/
-├── app.py
-├── config.py
-├── reader.py
-├── websocket.py
+├── src/fx90_simulator/
+│   ├── api/          # REST, WebSocket, and test-control interfaces
+│   ├── simulator/    # Simulated reader, test controls, and tag generation
+│   ├── config.py     # Environment-based configuration
+│   └── main.py       # Application entry point
+├── tests/            # Automated unit and integration tests
+├── scripts/          # Developer utilities
+├── certs/            # Local TLS certificates (not committed)
+├── data/             # Runtime and captured data
+├── systemd/          # Native Linux service definition
+├── .devcontainer/    # VS Code Dev Container configuration
+├── Dockerfile
+├── compose.yaml
 ├── requirements.txt
-├── README.md
-├── .gitignore
-├── scripts/
-│   └── generate-certs.sh
-├── certs/
-│   └── .gitkeep
-└── data/
-    └── tags.json
+└── README.md
 ```
 
-### Files
+## Configuration
 
-- `app.py` - FastAPI application and REST/WebSocket routes.
-- `config.py` - Application configuration and certificate paths.
-- `reader.py` - Simulated reader state and tag data.
-- `websocket.py` - WebSocket connection management.
-- `data/tags.json` - Sample RFID tags used by the simulator.
-- `scripts/generate-certs.sh` - Reproducibly creates the development CA and server certificate.
+Configuration is supplied through environment variables. Docker Compose loads credentials from a local `.secrets` file.
 
-## Purpose
+Create the local secrets file from the committed template:
 
-This is a test device, not an RFID reader. It allows application development and integration testing without having a physical FX90 connected.
+```bash
+cp secrets_example .secrets
+```
 
-Planned capabilities include:
+Important settings include:
 
-- Start/stop the simulated reader
-- Report reader status
-- Generate simulated RFID tag reads
-- Simulate multiple antennas
-- Simulate reader errors
-- Simulate disconnect/reconnect
-- Expose FX90-compatible REST endpoints
-- Expose FX90-compatible WebSocket events
+| Variable | Default | Purpose |
+|---|---:|---|
+| `FX90_HOST` | `0.0.0.0` | Listen address |
+| `FX90_HTTPS_PORT` | `443` | REST and WSS port |
+| `FX90_BIB_START` | `1` | First possible legitimate bib number |
+| `FX90_BIB_END` | `429` | Last possible legitimate bib number |
+| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags per reader start |
+| `FX90_TAG_ORDER` | `random` | Legitimate tag order: `random` or `sequential` |
+| `FX90_NOISE_PERCENT` | `5` | Percentage of generated events using noise tags |
+| `FX90_MAX_BURST_SIZE` | `20` | Maximum events in one burst |
+| `FX90_MAX_BURST_SECONDS` | `0.8` | Target maximum burst duration |
+| `FX90_BETWEEN_BURSTS_MIN` | `2` | Minimum seconds between bursts |
+| `FX90_BETWEEN_BURSTS_MAX` | `8` | Maximum seconds between bursts |
+| `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
+| `FX90_NOISE_POOL_SIZE` | `50` | Number of reusable generated noise tags |
+| `FX90_AUTO_START` | `false` | Start automatically |
+| `FX90_HEARTBEAT_SECONDS` | `5` | Diagnostic heartbeat interval |
+| `FX90_CORS_ORIGINS` | _(unset)_ | Comma-separated allowed browser origins |
 
-The actual FX90-compatible endpoint paths and JSON formats will be added as they are documented.
+Legitimate RFID values are derived directly from the bib number. For example:
 
-## Raspberry Pi Setup
+```text
+Bib 1   -> 000000000000000000001
+Bib 10  -> 000000000000000000010
+Bib 190 -> 000000000000000000190
+Bib 429 -> 000000000000000000429
+```
 
-### 1. Install prerequisites
+No runner/tag data file is required.
 
-On Raspberry Pi OS/Debian:
+## TLS and certificate pinning
+
+The harness uses TLS because Ultra Tracker connects to the simulated FXR90 over HTTPS and WSS. Generate local certificates with:
+
+```bash
+./scripts/generate-certs.sh
+```
+
+The script detects the machine's hostname and primary IP and includes them in the server certificate's Subject Alternative Names.
+
+If Ultra Tracker's `sslCert` field is being used for certificate pinning, obtain the server certificate serial with:
+
+```bash
+openssl x509 -in certs/server.crt -noout -serial
+```
+
+Enter the hexadecimal value after `serial=` as the certificate pin.
+
+Keep `ca.key` and `server.key` private. Do not commit private keys or generated certificates.
+
+## Docker deployment
+
+```bash
+git clone https://github.com/JordenLuke/fx90-simulator.git
+cd fx90-simulator
+git checkout develop
+cp secrets_example .secrets
+./scripts/generate-certs.sh
+docker compose up -d --build
+```
+
+The container publishes HTTPS/WSS on port **443**.
+
+Check the service:
+
+```bash
+docker compose ps
+docker compose logs -f
+```
+
+Stop it with:
+
+```bash
+docker compose down
+```
+
+## Native Raspberry Pi / Linux deployment
+
+Native deployment is useful on a Raspberry Pi or another Linux host where Docker is not desired. The examples install the harness under `/opt/fx90-simulator`.
 
 ```bash
 sudo apt update
 sudo apt install -y git python3 python3-venv openssl
-```
-
-Verify:
-
-```bash
-python3 --version
-openssl version
-```
-
-### 2. Clone the repository
-
-```bash
-git clone <repository-url>
-cd fx90-simulator
-```
-
-### 3. Create a Python virtual environment
-
-```bash
+sudo mkdir -p /opt
+sudo git clone https://github.com/JordenLuke/fx90-simulator.git /opt/fx90-simulator
+sudo chown -R "$USER":"$USER" /opt/fx90-simulator
+cd /opt/fx90-simulator
+git checkout develop
 python3 -m venv .venv
-source .venv/bin/activate
-```
-
-You should see `(.venv)` in your shell prompt.
-
-### 4. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-## Generate the Development Certificate
-
-The simulator uses HTTPS and WSS so applications can be tested against TLS rather than plain HTTP.
-
-Run:
-
-```bash
-chmod +x scripts/generate-certs.sh
+.venv/bin/pip install -r requirements.txt
 ./scripts/generate-certs.sh
 ```
 
-This creates:
+For normal operation, use the repository's systemd service rather than running the application as root.
 
-```text
-certs/
-├── ca.crt
-├── ca.key
-├── server.crt
-└── server.key
-```
+## Development container
 
-The server certificate is currently valid for:
+The repository includes a VS Code Dev Container configuration. Open the repository in VS Code and select **Reopen in Container**. The harness is available on port `443`.
 
-- `pie3.local`
-- `localhost`
-- `127.0.0.1`
+## Capture utility
 
-If the simulator will be accessed through another hostname or IP address, update the SAN entries in `scripts/generate-certs.sh` before generating the certificate.
-
-### Important
-
-`ca.key` and `server.key` are private keys. Do not commit them to Git.
-
-Generated certificates and private keys are ignored by `.gitignore`.
-
-## Start the Simulator
-
-With the virtual environment activated:
+`scripts/capture.py` is a utility for the current Zebra FXR90-compatible WebSocket interface. It records raw tag data for analysis or replay work and can reconnect after reader-side WebSocket/TCP resets.
 
 ```bash
-python app.py
+python3 scripts/capture.py
+python3 scripts/capture.py --cafile certs/ca.crt
 ```
 
-The default HTTPS endpoint is:
+Captured data is stored under `data/`.
 
-```text
-https://pie3.local:8443
-```
+## Security notes
 
-The server listens on all network interfaces (`0.0.0.0`).
-
-You can also start it with Uvicorn:
-
-```bash
-uvicorn app:app \
-  --host 0.0.0.0 \
-  --port 8443 \
-  --ssl-keyfile certs/server.key \
-  --ssl-certfile certs/server.crt
-```
-
-## Test the REST API
-
-Because the certificate is self-signed, `curl` will not trust it until the CA is installed.
-
-For a quick development test, certificate verification can temporarily be disabled:
-
-```bash
-curl -k https://pie3.local:8443/reader/status
-```
-
-Start the reader:
-
-```bash
-curl -k -X POST https://pie3.local:8443/reader/start
-```
-
-Stop the reader:
-
-```bash
-curl -k -X POST https://pie3.local:8443/reader/stop
-```
-
-## WebSocket
-
-The initial WebSocket endpoint is:
-
-```text
-wss://pie3.local:8443/ws
-```
-
-When a client connects, the simulator sends an initial status message.
-
-The WebSocket implementation is intentionally minimal at this stage. RFID tag events and the exact FX90 WebSocket protocol will be added after the real reader messages are documented.
-
-## Configuration
-
-Settings can be changed with environment variables.
-
-For example:
-
-```bash
-export FX90_HTTPS_PORT=8443
-export FX90_HOST=0.0.0.0
-python app.py
-```
-
-Available settings:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `FX90_HOST` | `0.0.0.0` | Listen address |
-| `FX90_HTTPS_PORT` | `8443` | HTTPS/WebSocket port |
-| `FX90_SERVER_CERT` | `certs/server.crt` | Server certificate |
-| `FX90_SERVER_KEY` | `certs/server.key` | Server private key |
-| `FX90_TAGS_FILE` | `data/tags.json` | Simulated tag file |
-| `FX90_RELOAD` | `false` | Enable development reload |
-
-## Trusting the CA
-
-For normal TLS validation, install `certs/ca.crt` as a trusted development CA on the machine running the application under test.
-
-Do not disable certificate validation in the application as the permanent solution. Using the local CA allows TLS behavior to be tested normally.
-
-The exact trust-store procedure depends on the operating system and application.
-
-## Current REST API
-
-The initial simulator provides:
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/reader/status` | Get simulated reader status |
-| `POST` | `/reader/start` | Start simulated reader |
-| `POST` | `/reader/stop` | Stop simulated reader |
-
-These are temporary simulator endpoints. They will be changed to match the actual FX90 API once the real request/response examples are provided.
-
-## Current WebSocket API
-
-Initial endpoint:
-
-```text
-wss://pie3.local:8443/ws
-```
-
-On connection:
-
-```json
-{
-  "type": "status",
-  "data": {
-    "state": "STOPPED",
-    "timestamp": "..."
-  }
-}
-```
-
-The final WebSocket message format will be based on the actual FX90 messages.
-
-## Development Workflow
-
-A typical development session:
-
-```bash
-cd fx90-simulator
-source .venv/bin/activate
-python app.py
-```
-
-Then use the application under test to connect to:
-
-```text
-https://pie3.local:8443
-```
-
-and:
-
-```text
-wss://pie3.local:8443/ws
-```
-
-As FX90 API examples become available, update the simulator to reproduce the real interface.
-
-## Design Goal
-
-Keep the simulator intentionally simple.
-
-The goal is not to reproduce the internal implementation of a Zebra FX90. The goal is to reproduce the externally visible behavior that our application depends on.
-
-That makes this project useful as a repeatable development and integration-test device.
+This harness is intended for controlled test networks. The default credentials are development defaults and should be changed before exposing the harness to an untrusted network.
