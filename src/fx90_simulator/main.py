@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import config
 from .api.rest import create_router
-from .api.test_api import create_test_router
+from .api.scenario_test_api import create_test_router
 from .api.websocket import WebSocketManager, register_endpoint
 from .simulator.reader import Reader
 from .simulator.scenarios import ScenarioLoader
