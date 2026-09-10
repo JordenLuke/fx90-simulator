@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang='en'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>RFID Interface Test Harness</title>
+<link rel='stylesheet' href='/test/assets/test_panel.css'>
+</head>
+<body>
+<header>
+    <h1>RFID Interface Test Harness</h1>
+    <p>Test the Ultra Tracker RFID interface using the Zebra FXR90 simulator.</p>
+</header>
+<div class='container'>
+    <div class='status-banner stopped' id='status_banner'><span class='status-dot'></span><span id='scan_state'>Stopped</span></div>
+
+    <div class='card'>
+        <h2>Live Test Status</h2>
+        <div class='counters'>
+            <div class='counter'><span class='value' id='tags_sent'>0</span><span class='label'>Tags sent</span></div>
+            <div class='counter'><span class='value' id='good_tags_sent'>0</span><span class='label'>Runner tags</span></div>
+            <div class='counter'><span class='value' id='noise_tags_sent'>0</span><span class='label'>Noise tags</span></div>
+            <div class='counter'><span class='value' id='remaining'>0</span><span class='label'>Remaining</span></div>
+            <div class='counter'><span class='value' id='custom_noise_remaining'>0</span><span class='label'>Custom noise remaining</span></div>
+            <div class='counter'><span class='value' id='clients'>0</span><span class='label'>WebSocket clients</span></div>
+        </div>
+    </div>
+
+    <div class='card'>
+        <h2>Race Configuration</h2>
+        <div class='grid'>
+            <div class='field'><label for='runner_count'>Runner count</label><input id='runner_count' type='number' min='1'></div>
+            <div class='field'><label for='tag_order'>Tag order</label><select id='tag_order'><option value='random'>Random</option><option value='sequential'>Sequential</option></select></div>
+            <div class='field'><label for='bib_start'>Bib start</label><input id='bib_start' type='number' min='1'></div>
+            <div class='field'><label for='bib_end'>Bib end</label><input id='bib_end' type='number' min='1'></div>
+            <div class='field'><label for='noise_percent'>Unknown/noise %</label><input id='noise_percent' type='number' min='0' max='100' step='0.1'></div>
+            <div class='field checkbox'><input id='report_each_tag_once' type='checkbox'><label for='report_each_tag_once'>Report each runner tag once</label></div>
+        </div>
+        <div class='field' style='margin-top:14px'>
+            <label for='noise_tags'>Custom noise tags (JSON array)</label>
+            <textarea id='noise_tags' spellcheck='false' placeholder='[\n  "00000000000000000000015A",\n  "00000000000000000000015B"\n]'></textarea>
+            <p class='hint'>Optional. Custom noise reads are consumed once, in list order, then the generated noise pool is used. Tags may be intentionally malformed for parser testing.</p>
+        </div>
+        <p class='hint'>Settings are runtime-only and can only be changed while the reader is stopped.</p>
+    </div>
+
+    <div class='card'>
+        <h2>Burst Behavior</h2>
+        <div class='grid'>
+            <div class='field'><label for='max_burst_size'>Maximum burst size</label><input id='max_burst_size' type='number' min='1'></div>
+            <div class='field'><label for='max_burst_seconds'>Maximum burst duration (seconds)</label><input id='max_burst_seconds' type='number' min='0' step='0.01'></div>
+            <div class='field'><label for='between_bursts_min'>Minimum time between bursts (seconds)</label><input id='between_bursts_min' type='number' min='0' step='0.1'></div>
+            <div class='field'><label for='between_bursts_max'>Maximum time between bursts (seconds)</label><input id='between_bursts_max' type='number' min='0' step='0.1'></div>
+            <div class='field'><label for='tag_delay_ms'>Artificial tag delay (ms)</label><input id='tag_delay_ms' type='number' min='0' step='0.1'></div>
+        </div>
+    </div>
+
+    <div class='card danger'>
+        <h2>Failure Injection</h2>
+        <div class='grid'>
+            <div class='field'><label for='disconnect_after_tags'>Disconnect after tags (0 = disabled)</label><input id='disconnect_after_tags' type='number' min='0'></div>
+            <div class='field'><label for='disconnect_after_seconds'>Disconnect after seconds (0 = disabled)</label><input id='disconnect_after_seconds' type='number' min='0' step='0.1'></div>
+        </div>
+        <p class='hint'>These controls deliberately close the WebSocket so Ultra Tracker reconnect and recovery behavior can be tested.</p>
+    </div>
+
+    <div class='card'>
+        <h2>Controls</h2>
+        <div class='actions'>
+            <button id='save_button' onclick='save()'>Save Settings</button>
+            <button id='start_button' onclick='start()'>Start Scan</button>
+            <button class='stop' onclick='stop()'>Stop Scan</button>
+            <button class='reset' onclick='reset()'>Reset</button>
+        </div>
+        <div id='error'></div>
+    </div>
+
+    <div class='card'>
+        <h2>Diagnostic Details</h2>
+        <pre id='status_json'>Loading...</pre>
+    </div>
+</div>
+<script>
+const ids = ['runner_count','bib_start','bib_end','tag_order','noise_percent','report_each_tag_once','max_burst_size','max_burst_seconds','between_bursts_min','between_bursts_max','disconnect_after_tags','disconnect_after_seconds','tag_delay_ms'];
+let initialized = false;
+function setForm(c) {
+    ids.forEach(id => {
+        const e = document.getElementById(id);
+        if (e.type === 'checkbox') e.checked = !!c[id];
+        else e.value = c[id];
+    });
+    document.getElementById('noise_tags').value = c.noise_tags && c.noise_tags.length ? JSON.stringify(c.noise_tags, null, 2) : '';
+}
+function form() {
+    const c = {};
+    ids.forEach(id => {
+        const e = document.getElementById(id);
+        c[id] = e.type === 'checkbox' ? e.checked : (e.type === 'number' ? Number(e.value) : e.value);
+    });
+    const noiseText = document.getElementById('noise_tags').value.trim();
+    if (noiseText) {
+        try {
+            const parsed = JSON.parse(noiseText);
+            if (!Array.isArray(parsed)) throw new Error('Custom noise tags must be a JSON array.');
+            if (!parsed.every(tag => typeof tag === 'string')) throw new Error('Every custom noise tag must be a string.');
+            c.noise_tags = parsed;
+        } catch (e) {
+            throw new Error('Invalid custom noise tag JSON: ' + e.message);
+        }
+    } else c.noise_tags = null;
+    return c;
+}
+function render(s) {
+    const running = !!s.scanning;
+    const banner = document.getElementById('status_banner');
+    banner.className = 'status-banner ' + (running ? 'running' : 'stopped');
+    document.getElementById('scan_state').textContent = running ? 'Scanning' : 'Stopped';
+    document.getElementById('tags_sent').textContent = s.tags_sent ?? 0;
+    document.getElementById('good_tags_sent').textContent = s.good_tags_sent ?? 0;
+    document.getElementById('noise_tags_sent').textContent = s.noise_tags_sent ?? 0;
+    document.getElementById('remaining').textContent = s.remaining ?? 0;
+    document.getElementById('custom_noise_remaining').textContent = s.custom_noise_remaining ?? 0;
+    document.getElementById('clients').textContent = s.clients ?? 0;
+    document.getElementById('status_json').textContent = JSON.stringify(s, null, 2);
+    document.getElementById('start_button').disabled = running;
+    document.getElementById('save_button').disabled = running;
+}
+function showError(message) { document.getElementById('error').textContent = message || ''; }
+async function request(url, options) {
+    const r = await fetch(url, options);
+    let x = {};
+    try { x = await r.json(); } catch (_) {}
+    if (!r.ok) throw new Error(x.detail || x.message || 'Request failed');
+    return x;
+}
+async function load() {
+    try {
+        const s = await request('/test/status');
+        if (!initialized) { setForm(s.config); initialized = true; }
+        render(s); showError('');
+    } catch (e) { showError(e.message); }
+}
+async function save() {
+    try {
+        const values = form();
+        render(await request('/test/config', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(values)}));
+        showError('');
+    } catch (e) { showError(e.message); }
+}
+async function start() {
+    try { render(await request('/test/start', {method:'POST'})); showError(''); }
+    catch (e) { showError(e.message); }
+}
+async function stop() {
+    try { render(await request('/test/stop', {method:'POST'})); showError(''); }
+    catch (e) { showError(e.message); }
+}
+async function reset() {
+    try {
+        const s = await request('/test/reset', {method:'POST'});
+        setForm(s.config); render(s); showError('');
+    } catch (e) { showError(e.message); }
+}
+load();
+setInterval(load, 1000);
+</script>
+</body>
+</html>
