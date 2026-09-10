@@ -7,6 +7,7 @@ from .. import config
 class TestConfig:
     """Runtime controls for stress and failure injection tests."""
 
+    scenario_id: str = "start-line"
     simulation_mode: str = "start-line"
     duration_hours: float = 16.0
     runner_count: int = config.RUNNER_COUNT
@@ -25,6 +26,8 @@ class TestConfig:
     tag_delay_ms: float = 0.0
 
     def validate(self) -> None:
+        if not self.scenario_id or not isinstance(self.scenario_id, str):
+            raise ValueError("scenario_id must be a non-empty string")
         if self.simulation_mode not in {"start-line", "finish-line"}:
             raise ValueError('simulation_mode must be "start-line" or "finish-line"')
         if self.duration_hours <= 0:
