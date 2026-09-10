@@ -98,7 +98,7 @@ class Reader:
         self._started_at = time.monotonic()
         self._task = asyncio.create_task(self._generate_race())
         self._heartbeat_task = asyncio.create_task(self._heartbeat())
-        logger.info("[FX90] SCANNING | sent=0 good=0 noise=0 custom_noise=%d clients=%d", self._custom_noise_remaining, len(self._senders))
+        logger.info("[FX90] SCANNING | mode=%s sent=0 good=0 noise=0 custom_noise=%d clients=%d", self.test_config.simulation_mode, self._custom_noise_remaining, len(self._senders))
 
     async def stop(self) -> None:
         self.radio_active = False
@@ -117,54 +117,88 @@ class Reader:
         while self.radio_active:
             await asyncio.sleep(config.HEARTBEAT_SECONDS)
             if self.radio_active:
-                logger.info("[FX90] SCANNING | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
+                logger.info("[FX90] SCANNING | mode=%s sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self.test_config.simulation_mode, self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
 
     async def _generate_race(self) -> None:
         cfg = self.test_config
-        generator = TagGenerator(
-            cfg.bib_start,
-            cfg.bib_end,
-            cfg.runner_count,
-            cfg.tag_order,
-            noise_tags=cfg.noise_tags,
-        )
+        generator = TagGenerator(cfg.bib_start, cfg.bib_end, cfg.runner_count, cfg.tag_order, noise_tags=cfg.noise_tags)
         remaining = generator.race_tags()
-        race_complete_logged = False
         try:
-            while self.radio_active:
-                if cfg.report_each_tag_once and not remaining:
-                    if not race_complete_logged:
-                        race_complete_logged = True
-                        logger.info("[FX90] RACE COMPLETE | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
-                    await asyncio.sleep(1)
-                    continue
-
-                count = min(random.randint(1, cfg.max_burst_size), len(remaining) if cfg.report_each_tag_once else cfg.max_burst_size)
-                for _ in range(count):
-                    if cfg.disconnect_after_seconds and time.monotonic() - self._started_at >= cfg.disconnect_after_seconds:
-                        await self._disconnect_all("disconnect-after-seconds")
-                        return
-                    if cfg.disconnect_after_tags and self._tags_sent >= cfg.disconnect_after_tags:
-                        await self._disconnect_all("disconnect-after-tags")
-                        return
-                    tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, cfg.report_each_tag_once)
-                    self._custom_noise_remaining = generator.custom_noise_remaining
-                    self.event_num += 1
-                    self._tags_sent += 1
-                    if is_noise:
-                        self._noise_tags_sent += 1
-                    else:
-                        self._good_tags_sent += 1
-                    if cfg.tag_delay_ms:
-                        await asyncio.sleep(cfg.tag_delay_ms / 1000)
-                    await self._broadcast(create_tag_event(self.event_num, tag_id))
-                    if count > 1:
-                        await asyncio.sleep(random.uniform(cfg.max_burst_seconds / count * 0.25, cfg.max_burst_seconds / count * 1.5))
-                await asyncio.sleep(random.uniform(cfg.between_bursts_min, cfg.between_bursts_max))
+            if cfg.simulation_mode == "finish-line":
+                await self._generate_finish_line(cfg, generator, remaining)
+            else:
+                await self._generate_start_line(cfg, generator, remaining)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             self._last_error = str(exc)
             logger.exception("[FX90] GENERATOR ERROR")
             self.radio_active = False
+
+    async def _generate_start_line(self, cfg: TestConfig, generator: TagGenerator, remaining: list[str]) -> None:
+        race_complete_logged = False
+        while self.radio_active:
+            if cfg.report_each_tag_once and not remaining:
+                if not race_complete_logged:
+                    race_complete_logged = True
+                    logger.info("[FX90] RACE COMPLETE | sent=%d good=%d noise=%d custom_noise_remaining=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, self._custom_noise_remaining, len(self._senders))
+                await asyncio.sleep(1)
+                continue
+            count = min(random.randint(1, cfg.max_burst_size), len(remaining) if cfg.report_each_tag_once else cfg.max_burst_size)
+            await self._send_burst(cfg, generator, remaining, count)
+            await asyncio.sleep(random.uniform(cfg.between_bursts_min, cfg.between_bursts_max))
+
+    async def _generate_finish_line(self, cfg: TestConfig, generator: TagGenerator, remaining: list[str]) -> None:
+        duration = cfg.duration_hours * 3600
+        deadline = time.monotonic() + duration
+        while self.radio_active and remaining:
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0:
+                break
+
+            count = min(random.randint(1, cfg.max_burst_size), len(remaining))
+            await self._send_burst(cfg, generator, remaining, count)
+            if not remaining:
+                break
+
+            remaining_time = max(0.0, deadline - time.monotonic())
+            runners_left = len(remaining)
+            # Scale the configured gap window to the remaining race time so all
+            # legitimate runner tags are distributed across the full duration.
+            average_gap = remaining_time / max(1, runners_left)
+            low = min(cfg.between_bursts_min, average_gap * count * 0.75)
+            high = min(cfg.between_bursts_max, average_gap * count * 1.25)
+            if high < low:
+                low = high
+            await asyncio.sleep(random.uniform(low, high))
+
+        if self.radio_active and remaining:
+            logger.warning("[FX90] FINISH LINE DURATION EXPIRED | remaining=%d", len(remaining))
+        elif self.radio_active:
+            logger.info("[FX90] FINISH LINE COMPLETE | sent=%d good=%d noise=%d clients=%d", self._tags_sent, self._good_tags_sent, self._noise_tags_sent, len(self._senders))
+            await asyncio.sleep(1)
+
+    async def _send_burst(self, cfg: TestConfig, generator: TagGenerator, remaining: list[str], count: int) -> None:
+        for index in range(count):
+            if cfg.disconnect_after_seconds and time.monotonic() - self._started_at >= cfg.disconnect_after_seconds:
+                await self._disconnect_all("disconnect-after-seconds")
+                return
+            if cfg.disconnect_after_tags and self._tags_sent >= cfg.disconnect_after_tags:
+                await self._disconnect_all("disconnect-after-tags")
+                return
+            tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, cfg.report_each_tag_once)
+            self._custom_noise_remaining = generator.custom_noise_remaining
+            self.event_num += 1
+            self._tags_sent += 1
+            if is_noise:
+                self._noise_tags_sent += 1
+            else:
+                self._good_tags_sent += 1
+            if cfg.tag_delay_ms:
+                await asyncio.sleep(cfg.tag_delay_ms / 1000)
+            await self._broadcast(create_tag_event(self.event_num, tag_id))
+            if index + 1 < count:
+                await asyncio.sleep(random.uniform(cfg.max_burst_seconds / count * 0.25, cfg.max_burst_seconds / count * 1.5))
 
     async def _disconnect_all(self, reason: str) -> None:
         logger.warning("[FX90] TEST DISCONNECT | reason=%s clients=%d", reason, len(self._senders))
