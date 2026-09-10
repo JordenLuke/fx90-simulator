@@ -13,7 +13,7 @@
     "max_burst_size": 20,
     "max_burst_seconds": 0.8,
     "between_bursts_min": 30,
-    "between_bursts_max": 300,
+    "between_bursts_max": 1800,
     "report_each_tag_once": true,
     "disconnect_after_tags": 0,
     "disconnect_after_seconds": 0,
