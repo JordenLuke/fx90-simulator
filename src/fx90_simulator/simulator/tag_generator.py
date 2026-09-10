@@ -12,6 +12,7 @@ class TagGenerator:
         self.runner_count = runner_count
         self.tag_order = tag_order
         self._custom_noise_remaining = list(noise_tags) if noise_tags else []
+        self._reported_runner_tags: set[str] = set()
         self.noise_tags = [
             self._tag_for_bib(bib_end + number)
             for number in range(1, noise_pool_size + 1)
@@ -40,8 +41,11 @@ class TagGenerator:
                 raise RuntimeError("noise tag pool must contain at least one tag when noise is enabled")
             return random.choice(self.noise_tags), True
         if report_each_tag_once:
-            if not remaining:
-                raise RuntimeError("no runner tags remain")
-            return remaining.pop(), False
+            while remaining:
+                tag = remaining.pop()
+                if tag not in self._reported_runner_tags:
+                    self._reported_runner_tags.add(tag)
+                    return tag, False
+            raise RuntimeError("no runner tags remain")
         tags = self.race_tags()
         return random.choice(tags), False
