@@ -43,7 +43,7 @@ class Reader:
         logger.info("[FX90] WebSocket DISCONNECTED | clients=%d", len(self._senders))
 
     def test_status(self) -> dict:
-        remaining = self.test_config.runner_count - self._good_tags_sent
+        remaining = (self.scenario.runner_count if self.scenario else self.test_config.runner_count) - self._good_tags_sent
         return {
             "scanning": self.radio_active,
             "clients": len(self._senders),
@@ -149,13 +149,7 @@ class Reader:
 
     async def _generate_manual_race(self) -> None:
         cfg = self.test_config
-        generator = TagGenerator(
-            cfg.bib_start,
-            cfg.bib_end,
-            cfg.runner_count,
-            cfg.tag_order,
-            noise_tags=cfg.noise_tags,
-        )
+        generator = TagGenerator(cfg.bib_start, cfg.bib_end, cfg.runner_count, cfg.tag_order, noise_tags=cfg.noise_tags)
         remaining = generator.race_tags()
         race_complete_logged = False
         try:
@@ -168,8 +162,7 @@ class Reader:
                     continue
                 count = min(random.randint(1, cfg.max_burst_size), len(remaining) if cfg.report_each_tag_once else cfg.max_burst_size)
                 for _ in range(count):
-                    if await self._should_disconnect():
-                        return
+                    if await self._should_disconnect(): return
                     tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, cfg.report_each_tag_once)
                     await self._emit_tag(generator, tag_id, is_noise, cfg.tag_delay_ms)
                     if count > 1:
@@ -180,16 +173,11 @@ class Reader:
 
     async def _generate_scenario(self) -> None:
         scenario = self.scenario
-        if scenario is None:
-            return
+        if scenario is None: return
         cfg = self.test_config
-        generator = TagGenerator(
-            cfg.bib_start,
-            cfg.bib_end,
-            scenario.runner_count,
-            cfg.tag_order,
-            noise_tags=cfg.noise_tags,
-        )
+        bib_start = cfg.bib_start
+        bib_end = max(cfg.bib_end, bib_start + scenario.runner_count - 1)
+        generator = TagGenerator(bib_start, bib_end, scenario.runner_count, cfg.tag_order, noise_tags=cfg.noise_tags)
         remaining = generator.race_tags()
         scheduler = ScenarioScheduler(scenario)
         previous = 0.0
@@ -200,12 +188,9 @@ class Reader:
                 await asyncio.sleep(max(0, (arrival - previous) / scenario.time_scale))
                 previous = arrival
                 for _ in range(count):
-                    if not self.radio_active:
-                        return
-                    if not remaining and scenario.report_each_tag_once:
-                        return
-                    if await self._should_disconnect():
-                        return
+                    if not self.radio_active: return
+                    if not remaining and scenario.report_each_tag_once: return
+                    if await self._should_disconnect(): return
                     tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, scenario.report_each_tag_once)
                     await self._emit_tag(generator, tag_id, is_noise, 0)
                 index += count
@@ -229,12 +214,9 @@ class Reader:
         self._custom_noise_remaining = generator.custom_noise_remaining
         self.event_num += 1
         self._tags_sent += 1
-        if is_noise:
-            self._noise_tags_sent += 1
-        else:
-            self._good_tags_sent += 1
-        if delay_ms:
-            await asyncio.sleep(delay_ms / 1000)
+        if is_noise: self._noise_tags_sent += 1
+        else: self._good_tags_sent += 1
+        if delay_ms: await asyncio.sleep(delay_ms / 1000)
         await self._broadcast(create_tag_event(self.event_num, tag_id))
 
     def _handle_generator_error(self, exc: Exception) -> None:
@@ -246,15 +228,11 @@ class Reader:
         logger.warning("[FX90] TEST DISCONNECT | reason=%s clients=%d", reason, len(self._senders))
         closers = list(self._senders.values())
         for closer in closers:
-            try:
-                await closer()
-            except Exception:
-                pass
+            try: await closer()
+            except Exception: pass
         self._senders.clear()
 
     async def _broadcast(self, message: str) -> None:
         for sender in list(self._senders):
-            try:
-                await sender(message)
-            except Exception:
-                self.unregister_sender(sender)
+            try: await sender(message)
+            except Exception: self.unregister_sender(sender)
