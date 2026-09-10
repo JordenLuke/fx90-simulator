@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse, Response
 
 from ..simulator.reader import Reader
+from ..simulator.scenario import ScenarioConfig
+from ..simulator.scenario_loader import ScenarioLoader
 
 
 TEMPLATES_PATH = Path(__file__).with_name("templates")
@@ -13,6 +15,7 @@ CONTROL_PANEL_CSS_PATH = TEMPLATES_PATH / "test_panel.css"
 
 def create_test_router(reader: Reader) -> APIRouter:
     api = APIRouter(prefix="/test")
+    scenario_loader = ScenarioLoader()
 
     @api.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def panel():
@@ -27,6 +30,33 @@ def create_test_router(reader: Reader) -> APIRouter:
 
     @api.get("/status")
     async def status():
+        return reader.test_status()
+
+    @api.get("/scenarios")
+    async def scenarios():
+        try:
+            return {"scenarios": [scenario.to_dict() for scenario in scenario_loader.list()]}
+        except ValueError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @api.put("/scenario")
+    async def select_scenario(values: dict):
+        try:
+            if "name" in values:
+                scenario = scenario_loader.get(str(values["name"]))
+            else:
+                scenario = ScenarioConfig.from_dict(values)
+            reader.set_scenario(scenario)
+        except (KeyError, ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return reader.test_status()
+
+    @api.post("/scenario/start")
+    async def start_scenario():
+        try:
+            await reader.start_scenario()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         return reader.test_status()
 
     @api.put("/config")
