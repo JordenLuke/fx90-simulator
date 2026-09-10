@@ -1,12 +1,14 @@
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 
 from ..simulator.reader import Reader
 
 
-CONTROL_PANEL_PATH = Path(__file__).with_name("templates") / "test_panel.html"
+TEMPLATES_PATH = Path(__file__).with_name("templates")
+CONTROL_PANEL_PATH = TEMPLATES_PATH / "test_panel.html"
+CONTROL_PANEL_CSS_PATH = TEMPLATES_PATH / "test_panel.css"
 
 
 def create_test_router(reader: Reader) -> APIRouter:
@@ -15,6 +17,13 @@ def create_test_router(reader: Reader) -> APIRouter:
     @api.get("/", response_class=HTMLResponse, include_in_schema=False)
     async def panel():
         return HTMLResponse(CONTROL_PANEL_PATH.read_text(encoding="utf-8"))
+
+    @api.get("/assets/test_panel.css", response_class=Response, include_in_schema=False)
+    async def stylesheet():
+        return Response(
+            CONTROL_PANEL_CSS_PATH.read_text(encoding="utf-8"),
+            media_type="text/css",
+        )
 
     @api.get("/status")
     async def status():
