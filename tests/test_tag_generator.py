@@ -28,3 +28,30 @@ def test_random_order_contains_same_runners() -> None:
 def test_runner_count_must_fit_range() -> None:
     with pytest.raises(ValueError):
         TagGenerator(1, 10, 11, "random")
+
+
+@pytest.mark.unit
+def test_report_each_tag_once_never_emits_duplicate_runner_tags() -> None:
+    generator = TagGenerator(1, 10, 10, "random")
+    remaining = generator.race_tags()
+
+    emitted = [
+        generator.next_tag(remaining, noise_percent=0, report_each_tag_once=True)[0]
+        for _ in range(10)
+    ]
+
+    assert len(emitted) == 10
+    assert len(set(emitted)) == 10
+    assert not remaining
+
+
+@pytest.mark.unit
+def test_report_each_tag_once_still_allows_noise() -> None:
+    generator = TagGenerator(1, 3, 3, "sequential", noise_tags=["noise-tag"])
+    remaining = generator.race_tags()
+
+    tag, is_noise = generator.next_tag(remaining, noise_percent=100, report_each_tag_once=True)
+
+    assert tag == "noise-tag"
+    assert is_noise is True
+    assert len(remaining) == 3
