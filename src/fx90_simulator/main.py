@@ -10,6 +10,7 @@ from .api.rest import create_router
 from .api.test_api import create_test_router
 from .api.websocket import WebSocketManager, register_endpoint
 from .simulator.reader import Reader
+from .simulator.scenarios import ScenarioLoader
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -17,6 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 def create_app() -> FastAPI:
     reader = Reader()
     websocket_manager = WebSocketManager()
+    scenario_loader = ScenarioLoader(config.PROJECT_ROOT / "scenarios")
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -32,7 +34,7 @@ def create_app() -> FastAPI:
         app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
 
     app.include_router(create_router(reader))
-    app.include_router(create_test_router(reader))
+    app.include_router(create_test_router(reader, scenario_loader))
     register_endpoint(app, reader, websocket_manager)
     return app
 
