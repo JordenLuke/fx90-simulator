@@ -28,6 +28,8 @@ class ScenarioConfig:
     type: str
     duration_seconds: float
     runner_count: int
+    bib_start: int
+    bib_end: int
     distribution: DistributionConfig
     burst: BurstConfig
     noise: NoiseConfig
@@ -42,6 +44,12 @@ class ScenarioConfig:
             raise ValueError("scenario duration must be greater than 0")
         if self.runner_count < 1:
             raise ValueError("runner_count must be at least 1")
+        if self.bib_start < 1 or self.bib_end < self.bib_start:
+            raise ValueError("scenario bib range is invalid")
+        if self.bib_end > 9999:
+            raise ValueError("scenario bib numbers must fit in four decimal digits")
+        if self.runner_count > self.bib_end - self.bib_start + 1:
+            raise ValueError("runner_count exceeds the scenario bib range")
         if self.distribution.type not in {"truncated-normal", "log-normal"}:
             raise ValueError("distribution type must be truncated-normal or log-normal")
         if self.burst.max_size < 1:
@@ -69,6 +77,8 @@ class ScenarioConfig:
             type=str(data.get("type", "custom")),
             duration_seconds=float(data["duration_seconds"]),
             runner_count=int(data["runner_count"]),
+            bib_start=int(data.get("bib_start", 1)),
+            bib_end=int(data.get("bib_end", data["runner_count"])),
             distribution=DistributionConfig(
                 type=str(distribution["type"]),
                 center_seconds=(float(distribution["center_seconds"]) if distribution.get("center_seconds") is not None else None),
@@ -93,6 +103,8 @@ class ScenarioConfig:
             "type": self.type,
             "duration_seconds": self.duration_seconds,
             "runner_count": self.runner_count,
+            "bib_start": self.bib_start,
+            "bib_end": self.bib_end,
             "distribution": {
                 "type": self.distribution.type,
                 "center_seconds": self.distribution.center_seconds,
@@ -133,7 +145,6 @@ class ScenarioScheduler:
                 if 0 <= value <= duration:
                     values.append(value)
         else:
-            # A median around 60% of the scenario duration gives a long finish tail.
             mu = math.log(max(duration * 0.35, 1))
             sigma = 1.0
             values = [min(duration, self.rng.lognormvariate(mu, sigma)) for _ in range(count)]
