@@ -1,0 +1,22 @@
+{
+  "name": "Finish Line Test",
+  "description": "Simulates 400 runners finishing an ultra marathon over a 16-hour period, with compact finish-line groups.",
+  "settings": {
+    "simulation_mode": "finish-line",
+    "duration_hours": 16,
+    "runner_count": 400,
+    "bib_start": 1,
+    "bib_end": 429,
+    "tag_order": "random",
+    "noise_percent": 5,
+    "noise_tags": null,
+    "max_burst_size": 20,
+    "max_burst_seconds": 0.8,
+    "between_bursts_min": 30,
+    "between_bursts_max": 1800,
+    "report_each_tag_once": true,
+    "disconnect_after_tags": 0,
+    "disconnect_after_seconds": 0,
+    "tag_delay_ms": 0
+  }
+}

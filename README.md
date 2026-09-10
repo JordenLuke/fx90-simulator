@@ -4,19 +4,65 @@ A lightweight RFID interface test harness for **Ultra Tracker**, with the **Zebr
 
 The project is intentionally **not** a complete Zebra FXR90 implementation. It reproduces the externally visible behavior that Ultra Tracker consumes so the RFID interface can be tested with normal race traffic, high-volume traffic, bursts, unknown tags, reconnects, and controlled failure scenarios.
 
-The architecture is intended to make additional reader simulators possible later:
+## Test control panel
+
+The harness includes a browser-based control panel:
 
 ```text
-Ultra Tracker
-     │
-     │ RFID interface
-     ▼
-RFID Interface Test Harness
-     │
-     ├── Zebra FXR90 simulator   ← current implementation
-     ├── Future reader simulator
-     └── Future reader simulator
+https://<host>:443/test/
 ```
+
+Test behavior is organized as **scenario JSON files** under `scenarios/`. The control panel discovers those files automatically and places them in the **Test Scenario** drop-down.
+
+Selecting a scenario loads its settings into the visible form fields so the user can see exactly what will be tested. The fields remain editable while the reader is stopped, so a scenario can be adjusted without creating another JSON file.
+
+The initial scenarios are:
+
+- **Start Line Test** — compact, high-volume runner traffic with bursts of up to 20 tags.
+- **Finish Line Test** — 400 runners distributed across a 16-hour period, with compact groups at the finish line.
+
+Adding another scenario is intended to be as simple as adding another JSON file. The simulator validates the settings when they are saved or when a scan starts.
+
+The panel provides:
+
+- **Scenario selection** loaded dynamically from JSON
+- **Visible scenario settings** for runner count, bib range, tag order, noise, bursts, duration, and delivery delay
+- **Live scan status** and counters
+- **Custom noise tags** supplied as a JSON array
+- **Failure injection** for WebSocket disconnects after a tag count or elapsed time
+- **Start, stop, save, and reset controls**
+- **Diagnostic JSON** containing the complete current test state
+
+Settings are runtime-only and can only be changed while the simulated reader is stopped.
+
+### Scenario format
+
+A scenario file contains a display name, description, and a settings object. For example:
+
+```json
+{
+  "name": "Finish Line Test",
+  "description": "Simulates 400 runners finishing an ultra marathon over a 16-hour period.",
+  "settings": {
+    "simulation_mode": "finish-line",
+    "duration_hours": 16,
+    "runner_count": 400,
+    "tag_order": "random",
+    "noise_percent": 5,
+    "max_burst_size": 20,
+    "max_burst_seconds": 0.8,
+    "between_bursts_min": 30,
+    "between_bursts_max": 1800,
+    "report_each_tag_once": true
+  }
+}
+```
+
+Scenario JSON describes the test; the simulator code remains responsible for executing the supported simulation modes. This keeps future scenarios easy to add without putting executable code in configuration files.
+
+### Custom noise tags
+
+Custom noise tags are treated as a one-shot queue. When a noise event occurs, the next supplied custom tag is sent in list order. Once the list is exhausted, the generated noise pool is used. This is useful for parser and error-handling tests because custom values are not required to look like valid RFID tags.
 
 ## Current reader implementation
 
@@ -33,90 +79,7 @@ HTTPS REST:  https://<host>:443/cloud/...
 WSS:         wss://<host>:443/ws
 ```
 
-The FXR90-specific REST paths, WebSocket payload format, and `FX90_*` environment variables are retained because they are part of the current Ultra Tracker integration contract.
-
-## Test control panel
-
-The harness includes a browser-based control panel for repeatable integration and stress testing:
-
-```text
-https://<host>:443/test/
-```
-
-It provides:
-
-- **Live scan status**
-- **Live counters** for total tags, legitimate runner tags, noise tags, remaining runners, custom noise remaining, and WebSocket clients
-- **Race configuration** for runner count, bib range, tag order, noise percentage, and one-read-per-tag behavior
-- **Custom noise tags** supplied as a JSON array
-- **Burst configuration** for burst size, duration, time between bursts, and artificial tag delay
-- **Failure injection** for WebSocket disconnects after a tag count or elapsed time
-- **Start, stop, save, and reset controls**
-- **Diagnostic JSON** containing the complete current test state
-
-Settings are runtime-only and can only be changed while the simulated reader is stopped.
-
-### Custom noise tags
-
-Custom noise tags are treated as a one-shot queue. When a noise event occurs, the next supplied custom tag is sent in list order. Once the list is exhausted, the generated noise pool is used.
-
-This is useful for parser and error-handling tests because custom values are not required to look like valid RFID tags. For example:
-
-```json
-[
-  "00000000000000000000015A",
-  "00000000000000000000015B",
-  "00000000000000000000015C"
-]
-```
-
-The **Custom noise remaining** counter shows how many supplied values are still waiting to be consumed. Because noise selection is probabilistic, the queue is not a fixed number of events; it drains only when noise events are selected.
-
-### Suggested test workflow
-
-1. Open `/test/` in a browser.
-2. Configure the race, burst, noise, and failure-injection settings.
-3. Click **Save Settings**.
-4. Connect Ultra Tracker to the harness.
-5. Click **Start Scan**.
-6. Watch the live counters and WebSocket client count.
-7. Use **Stop Scan** or **Reset** before changing the configuration.
-
-For example, setting `disconnect_after_tags` to `190` deliberately closes the WebSocket after approximately 190 delivered events, allowing Ultra Tracker reconnect and recovery behavior to be tested against a repeatable failure.
-
-The test control API is also available directly:
-
-```text
-GET  /test/status
-PUT  /test/config
-POST /test/start
-POST /test/stop
-POST /test/reset
-GET  /test/
-```
-
-## Automated tests
-
-Install dependencies and run the complete suite:
-
-```bash
-pytest
-```
-
-Useful subsets:
-
-```bash
-pytest -m unit
-pytest -m integration
-pytest -m websocket
-pytest -m stress
-```
-
-The `stress` marker is reserved for tests that intentionally generate large or high-volume traffic so those tests do not have to run on every small code change.
-
 ## Zebra FXR90 / Ultra Tracker contract
-
-This section documents the current reader-specific compatibility contract. It is deliberately kept separate from the generic test-harness purpose so additional reader implementations can be added without changing the overall project description.
 
 ### REST
 
@@ -163,7 +126,7 @@ The `idHex` format is compatible with Ultra Tracker's current parser: 20 leading
 
 ## Simulated traffic behavior
 
-The default configuration is designed around a typical ultra race with roughly 300–400 runners:
+The **Start Line Test** is designed around a typical ultra race start with roughly 300–400 runners:
 
 - **400 legitimate runner tags** by default
 - Legitimate runner tags are generated from the configured bib range and reported **once per reader start**
@@ -172,19 +135,38 @@ The default configuration is designed around a typical ultra race with roughly 3
 - A burst targets approximately **one second or less**
 - **5% unknown/noise tags** by default
 - Generated noise uses bib numbers outside the configured runner range
-- Tag generation remains stopped until `/cloud/start` is called unless `FX90_AUTO_START=true`
-- Periodic heartbeat logs report scan state, counts, remaining runners, custom noise remaining, and connected WebSocket clients
+- Periodic heartbeat logs report scan state, counts, remaining runners, and connected WebSocket clients
 
-The harness also supports deliberate WebSocket disconnects and artificial delivery delay so reconnect, health-check, timeout, and throughput behavior can be tested deliberately rather than relying only on failures from a physical reader.
+The **Finish Line Test** keeps the same runner/tag contract but distributes legitimate runner reads across its configured duration. The default scenario represents 400 runners finishing over **16 hours**, with compact groups at the finish line rather than a single start-line burst.
+
+The harness also supports deliberate WebSocket disconnects and artificial delivery delay so reconnect, health-check, timeout, and throughput behavior can be tested deliberately.
+
+## Automated tests
+
+Install dependencies and run the complete suite:
+
+```bash
+pytest
+```
+
+Useful subsets:
+
+```bash
+pytest -m unit
+pytest -m integration
+pytest -m websocket
+pytest -m stress
+```
 
 ## Project layout
 
 ```text
 fx90-simulator/
+├── scenarios/        # JSON-defined simulation scenarios
 ├── src/fx90_simulator/
 │   ├── api/          # REST, WebSocket, and test-control interfaces
-│   ├── simulator/    # Simulated reader, test controls, and tag generation
-│   ├── config.py     # Environment-based configuration
+│   ├── simulator/    # Simulated reader, scenarios, test controls, and tag generation
+│   ├── config.py     # Environment-based deployment configuration
 │   └── main.py       # Application entry point
 ├── tests/            # Automated unit and integration tests
 ├── scripts/          # Developer utilities
@@ -198,47 +180,21 @@ fx90-simulator/
 └── README.md
 ```
 
-## Configuration
+## Deployment configuration
 
-Configuration is supplied through environment variables. Docker Compose loads credentials from a local `.secrets` file.
+Environment variables continue to handle deployment and reader-interface configuration such as the HTTPS port, credentials, certificate paths, CORS, and heartbeat interval. Simulation behavior is now primarily selected through the scenario control panel rather than requiring environment-variable changes.
 
-Create the local secrets file from the committed template:
-
-```bash
-cp secrets_example .secrets
-```
-
-Important settings include:
+Important deployment settings include:
 
 | Variable | Default | Purpose |
 |---|---:|---|
 | `FX90_HOST` | `0.0.0.0` | Listen address |
 | `FX90_HTTPS_PORT` | `443` | REST and WSS port |
-| `FX90_BIB_START` | `1` | First possible legitimate bib number |
-| `FX90_BIB_END` | `429` | Last possible legitimate bib number |
-| `FX90_RUNNER_COUNT` | `400` | Number of legitimate runner tags per reader start |
-| `FX90_TAG_ORDER` | `random` | Legitimate tag order: `random` or `sequential` |
-| `FX90_NOISE_PERCENT` | `5` | Percentage of generated events using noise tags |
-| `FX90_MAX_BURST_SIZE` | `20` | Maximum events in one burst |
-| `FX90_MAX_BURST_SECONDS` | `0.8` | Target maximum burst duration |
-| `FX90_BETWEEN_BURSTS_MIN` | `2` | Minimum seconds between bursts |
-| `FX90_BETWEEN_BURSTS_MAX` | `8` | Maximum seconds between bursts |
-| `FX90_REPORT_EACH_TAG_ONCE` | `true` | Report each legitimate runner once per start |
-| `FX90_NOISE_POOL_SIZE` | `50` | Number of reusable generated noise tags |
 | `FX90_AUTO_START` | `false` | Start automatically |
 | `FX90_HEARTBEAT_SECONDS` | `5` | Diagnostic heartbeat interval |
 | `FX90_CORS_ORIGINS` | _(unset)_ | Comma-separated allowed browser origins |
 
-Legitimate RFID values are derived directly from the bib number. For example:
-
-```text
-Bib 1   -> 000000000000000000001
-Bib 10  -> 000000000000000000010
-Bib 190 -> 000000000000000000190
-Bib 429 -> 000000000000000000429
-```
-
-No runner/tag data file is required.
+The current environment variables for runner/tag defaults remain available as application defaults, but scenario JSON is the preferred way to select a repeatable test configuration.
 
 ## TLS and certificate pinning
 
@@ -248,8 +204,6 @@ The harness uses TLS because Ultra Tracker connects to the simulated FXR90 over 
 ./scripts/generate-certs.sh
 ```
 
-The script detects the machine's hostname and primary IP and includes them in the server certificate's Subject Alternative Names.
-
 If Ultra Tracker's `sslCert` field is being used for certificate pinning, obtain the server certificate serial with:
 
 ```bash
@@ -257,8 +211,6 @@ openssl x509 -in certs/server.crt -noout -serial
 ```
 
 Enter the hexadecimal value after `serial=` as the certificate pin.
-
-Keep `ca.key` and `server.key` private. Do not commit private keys or generated certificates.
 
 ## Docker deployment
 
@@ -272,19 +224,6 @@ docker compose up -d --build
 ```
 
 The container publishes HTTPS/WSS on port **443**.
-
-Check the service:
-
-```bash
-docker compose ps
-docker compose logs -f
-```
-
-Stop it with:
-
-```bash
-docker compose down
-```
 
 ## Native Raspberry Pi / Linux deployment
 
@@ -312,13 +251,6 @@ The repository includes a VS Code Dev Container configuration. Open the reposito
 ## Capture utility
 
 `scripts/capture.py` is a utility for the current Zebra FXR90-compatible WebSocket interface. It records raw tag data for analysis or replay work and can reconnect after reader-side WebSocket/TCP resets.
-
-```bash
-python3 scripts/capture.py
-python3 scripts/capture.py --cafile certs/ca.crt
-```
-
-Captured data is stored under `data/`.
 
 ## Security notes
 
