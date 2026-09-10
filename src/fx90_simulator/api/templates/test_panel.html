@@ -27,6 +27,15 @@
     </div>
 
     <div class='card'>
+        <h2>Scenario</h2>
+        <div class='grid'>
+            <div class='field'><label for='scenario'>Built-in scenario</label><select id='scenario'><option value=''>Manual configuration</option></select></div>
+            <div class='field'><label for='scenario_time_scale'>Time scale</label><select id='scenario_time_scale'><option value='1'>1x</option><option value='10'>10x</option><option value='60'>60x</option><option value='600'>600x</option></select></div>
+        </div>
+        <p class='hint' id='scenario_details'>Select a scenario to load its configuration. Manual configuration remains available.</p>
+    </div>
+
+    <div class='card'>
         <h2>Race Configuration</h2>
         <div class='grid'>
             <div class='field'><label for='runner_count'>Runner count</label><input id='runner_count' type='number' min='1'></div>
@@ -83,6 +92,8 @@
 <script>
 const ids = ['runner_count','bib_start','bib_end','tag_order','noise_percent','report_each_tag_once','max_burst_size','max_burst_seconds','between_bursts_min','between_bursts_max','disconnect_after_tags','disconnect_after_seconds','tag_delay_ms'];
 let initialized = false;
+let scenarios = [];
+let selectedScenario = null;
 function setForm(c) {
     ids.forEach(id => {
         const e = document.getElementById(id);
@@ -104,9 +115,7 @@ function form() {
             if (!Array.isArray(parsed)) throw new Error('Custom noise tags must be a JSON array.');
             if (!parsed.every(tag => typeof tag === 'string')) throw new Error('Every custom noise tag must be a string.');
             c.noise_tags = parsed;
-        } catch (e) {
-            throw new Error('Invalid custom noise tag JSON: ' + e.message);
-        }
+        } catch (e) { throw new Error('Invalid custom noise tag JSON: ' + e.message); }
     } else c.noise_tags = null;
     return c;
 }
@@ -126,6 +135,33 @@ function render(s) {
     document.getElementById('save_button').disabled = running;
 }
 function showError(message) { document.getElementById('error').textContent = message || ''; }
+function renderScenarioDetails(s) {
+    const d = document.getElementById('scenario_details');
+    if (!s) { d.textContent = 'Select a scenario to load its configuration. Manual configuration remains available.'; return; }
+    d.textContent = `${s.name}: ${s.runner_count} runners over ${s.duration_seconds}s; max burst ${s.burst.max_size}; ${s.distribution.type}.`;
+}
+function loadScenarioList() {
+    return request('/test/scenarios').then(x => {
+        scenarios = x.scenarios || [];
+        const select = document.getElementById('scenario');
+        scenarios.forEach(s => {
+            const option = document.createElement('option');
+            option.value = s.name; option.textContent = s.name;
+            select.appendChild(option);
+        });
+    });
+}
+document.getElementById('scenario').addEventListener('change', async e => {
+    try {
+        if (!e.target.value) { selectedScenario = null; renderScenarioDetails(null); return; }
+        const scenario = scenarios.find(s => s.name === e.target.value);
+        selectedScenario = scenario;
+        document.getElementById('scenario_time_scale').value = String(scenario.time_scale || 1);
+        renderScenarioDetails(scenario);
+        render(await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:scenario.name})}));
+        showError('');
+    } catch (e) { showError(e.message); }
+});
 async function request(url, options) {
     const r = await fetch(url, options);
     let x = {};
@@ -148,8 +184,11 @@ async function save() {
     } catch (e) { showError(e.message); }
 }
 async function start() {
-    try { render(await request('/test/start', {method:'POST'})); showError(''); }
-    catch (e) { showError(e.message); }
+    try {
+        if (selectedScenario) render(await request('/test/scenario/start', {method:'POST'}));
+        else render(await request('/test/start', {method:'POST'}));
+        showError('');
+    } catch (e) { showError(e.message); }
 }
 async function stop() {
     try { render(await request('/test/stop', {method:'POST'})); showError(''); }
@@ -158,9 +197,13 @@ async function stop() {
 async function reset() {
     try {
         const s = await request('/test/reset', {method:'POST'});
+        document.getElementById('scenario').value = '';
+        selectedScenario = null;
+        renderScenarioDetails(null);
         setForm(s.config); render(s); showError('');
     } catch (e) { showError(e.message); }
 }
+loadScenarioList().catch(e => showError(e.message));
 load();
 setInterval(load, 1000);
 </script>
