@@ -4,6 +4,8 @@
   "type": "short-burst",
   "duration_seconds": 60,
   "runner_count": 50,
+  "bib_start": 1,
+  "bib_end": 50,
   "distribution": {
     "type": "truncated-normal",
     "center_seconds": 30,
