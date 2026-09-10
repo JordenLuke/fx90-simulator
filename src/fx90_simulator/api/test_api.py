@@ -23,10 +23,7 @@ def create_test_router(reader: Reader) -> APIRouter:
 
     @api.get("/assets/test_panel.css", response_class=Response, include_in_schema=False)
     async def stylesheet():
-        return Response(
-            CONTROL_PANEL_CSS_PATH.read_text(encoding="utf-8"),
-            media_type="text/css",
-        )
+        return Response(CONTROL_PANEL_CSS_PATH.read_text(encoding="utf-8"), media_type="text/css")
 
     @api.get("/status")
     async def status():
@@ -44,6 +41,9 @@ def create_test_router(reader: Reader) -> APIRouter:
         try:
             if "name" in values:
                 scenario = scenario_loader.get(str(values["name"]))
+                if "time_scale" in values:
+                    scenario.time_scale = float(values["time_scale"])
+                    scenario.validate()
             else:
                 scenario = ScenarioConfig.from_dict(values)
             reader.set_scenario(scenario)
