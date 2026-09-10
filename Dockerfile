@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src ./src
 COPY scripts ./scripts
 COPY data ./data
+COPY scenarios ./scenarios
 RUN mkdir -p /app/certs
 
 ENV PYTHONPATH=/app/src
