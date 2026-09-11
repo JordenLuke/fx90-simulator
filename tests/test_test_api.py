@@ -11,7 +11,7 @@ def test_control_panel_and_status() -> None:
         status = client.get("/test/status")
 
     assert panel.status_code == 200
-    assert "FX90 Simulator" in panel.text
+    assert "RFID Interface Test Harness" in panel.text
     assert status.status_code == 200
     assert status.json()["config"]["runner_count"] == 400
 
