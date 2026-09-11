@@ -22,3 +22,19 @@ def test_control_api_rejects_invalid_settings() -> None:
         response = client.put("/test/config", json={"noise_percent": 101})
 
     assert response.status_code == 400
+
+
+@pytest.mark.integration
+def test_scenario_api_rejects_malformed_payload() -> None:
+    with TestClient(create_app()) as client:
+        response = client.put("/test/scenario", json={
+            "name": "Invalid",
+            "duration_seconds": 10,
+            "runner_count": 1,
+            "distribution": None,
+            "burst": None,
+            "noise": {"percent": 0},
+            "random_seed": 1,
+        })
+
+    assert response.status_code == 400
