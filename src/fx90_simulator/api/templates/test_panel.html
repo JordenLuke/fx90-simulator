@@ -133,6 +133,7 @@ function render(s) {
     document.getElementById('status_json').textContent = JSON.stringify(s, null, 2);
     document.getElementById('start_button').disabled = running;
     document.getElementById('save_button').disabled = running;
+    document.getElementById('scenario_time_scale').disabled = running || !selectedScenario;
 }
 function showError(message) { document.getElementById('error').textContent = message || ''; }
 function renderScenarioDetails(s) {
@@ -162,6 +163,16 @@ document.getElementById('scenario').addEventListener('change', async e => {
         showError('');
     } catch (e) { showError(e.message); }
 });
+document.getElementById('scenario_time_scale').addEventListener('change', async e => {
+    if (!selectedScenario) return;
+    try {
+        const scenario = {...selectedScenario, time_scale: Number(e.target.value)};
+        selectedScenario = scenario;
+        renderScenarioDetails(scenario);
+        render(await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:scenario.name, time_scale:scenario.time_scale})}));
+        showError('');
+    } catch (e) { showError(e.message); }
+});
 async function request(url, options) {
     const r = await fetch(url, options);
     let x = {};
@@ -173,6 +184,11 @@ async function load() {
     try {
         const s = await request('/test/status');
         if (!initialized) { setForm(s.config); initialized = true; }
+        if (s.scenario && selectedScenario) {
+            selectedScenario = s.scenario;
+            document.getElementById('scenario_time_scale').value = String(s.scenario.time_scale || 1);
+            renderScenarioDetails(s.scenario);
+        }
         render(s); showError('');
     } catch (e) { showError(e.message); }
 }
@@ -200,7 +216,7 @@ async function reset() {
         document.getElementById('scenario').value = '';
         selectedScenario = null;
         renderScenarioDetails(null);
-        setForm(s.config); render(s); showError('');
+        render(s); showError('');
     } catch (e) { showError(e.message); }
 }
 loadScenarioList().catch(e => showError(e.message));
