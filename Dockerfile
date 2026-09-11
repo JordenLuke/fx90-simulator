@@ -7,7 +7,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
 COPY scripts ./scripts
-COPY data ./data
 COPY tests ./tests
 RUN mkdir -p /app/certs
 
