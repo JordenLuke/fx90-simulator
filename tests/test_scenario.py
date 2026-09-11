@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from fx90_simulator.simulator.reader import Reader
 from fx90_simulator.simulator.scenario import ScenarioConfig, ScenarioScheduler
 from fx90_simulator.simulator.scenario_loader import ScenarioLoader
 from fx90_simulator.simulator.tag_generator import TagGenerator
@@ -105,7 +106,30 @@ def test_scenario_validation_rejects_invalid_bib_range() -> None:
             },
             "burst": {"max_size": 1, "max_duration_seconds": 0.1},
             "noise": {"percent": 0},
+            "random_seed": 1,
         })
+
+
+@pytest.mark.unit
+def test_scenario_validation_rejects_unseeded_or_infeasible_distribution() -> None:
+    base = {
+        "name": "Invalid",
+        "version": 1,
+        "type": "custom",
+        "duration_seconds": 10,
+        "runner_count": 1,
+        "bib_start": 1,
+        "bib_end": 1,
+        "distribution": {"type": "truncated-normal", "center_seconds": 5, "spread_seconds": 1},
+        "burst": {"max_size": 1, "max_duration_seconds": 0.1},
+        "noise": {"percent": 0},
+    }
+    with pytest.raises(ValueError, match="random_seed"):
+        ScenarioConfig.from_dict(base)
+    base["random_seed"] = 1
+    base["distribution"] = {"type": "truncated-normal", "center_seconds": 1e12, "spread_seconds": 1}
+    with pytest.raises(ValueError, match="negligible probability"):
+        ScenarioConfig.from_dict(base)
 
 
 @pytest.mark.unit
@@ -136,3 +160,32 @@ def test_scenario_noise_is_additive_and_does_not_consume_runner_tags() -> None:
     assert not remaining
     assert len(noise_tags) > 0
     assert set(noise_tags).isdisjoint(runner_tags)
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+aasync def test_reader_scenario_uses_scenario_bibs_and_additive_noise() -> None:
+    reader = Reader()
+    reader.set_scenario(ScenarioConfig.from_dict({
+        "name": "Reader Test",
+        "version": 1,
+        "type": "custom",
+        "duration_seconds": 0.01,
+        "runner_count": 3,
+        "bib_start": 700,
+        "bib_end": 702,
+        "distribution": {"type": "truncated-normal", "center_seconds": 0.001, "spread_seconds": 0.0001},
+        "burst": {"max_size": 3, "max_duration_seconds": 0.1},
+        "noise": {"percent": 100},
+        "random_seed": 7,
+    }))
+    reader.test_config.tag_order = "sequential"
+    await reader.start_scenario()
+    for _ in range(100):
+        if not reader.radio_active:
+            break
+        await __import__("asyncio").sleep(0.001)
+    await reader.stop()
+
+    assert reader._good_tags_sent == 3
+    assert reader._noise_tags_sent == 3
