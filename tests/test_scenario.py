@@ -1,3 +1,4 @@
+import asyncio
 import random
 from pathlib import Path
 
@@ -164,7 +165,7 @@ def test_scenario_noise_is_additive_and_does_not_consume_runner_tags() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.unit
-aasync def test_reader_scenario_uses_scenario_bibs_and_additive_noise() -> None:
+async def test_reader_scenario_uses_scenario_bibs_and_additive_noise() -> None:
     reader = Reader()
     reader.set_scenario(ScenarioConfig.from_dict({
         "name": "Reader Test",
@@ -184,7 +185,7 @@ aasync def test_reader_scenario_uses_scenario_bibs_and_additive_noise() -> None:
     for _ in range(100):
         if not reader.radio_active:
             break
-        await __import__("asyncio").sleep(0.001)
+        await asyncio.sleep(0.001)
     await reader.stop()
 
     assert reader._good_tags_sent == 3
