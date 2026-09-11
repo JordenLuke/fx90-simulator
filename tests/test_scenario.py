@@ -50,6 +50,44 @@ def test_burst_never_exceeds_configured_maximum() -> None:
 
 
 @pytest.mark.unit
+def test_burst_duration_matches_scheduled_arrivals() -> None:
+    scenario = ScenarioLoader(SCENARIOS).get("Start Line")
+    scheduler = ScenarioScheduler(scenario)
+
+    index = 0
+    while index < len(scheduler.arrivals):
+        count, start = scheduler.next_burst(index)
+        burst_arrivals = scheduler.arrivals[index:index + count]
+        assert burst_arrivals[-1] - start <= scenario.burst.max_duration_seconds
+        index += count
+
+
+@pytest.mark.unit
+def test_start_line_has_front_loaded_distribution() -> None:
+    scenario = ScenarioLoader(SCENARIOS).get("Start Line")
+    arrivals = ScenarioScheduler(scenario).arrivals
+
+    first_15_minutes = sum(value <= 900 for value in arrivals)
+    first_30_minutes = sum(value <= 1800 for value in arrivals)
+
+    assert first_15_minutes >= 300
+    assert first_30_minutes >= 450
+
+
+@pytest.mark.unit
+def test_finish_line_has_long_tail() -> None:
+    scenario = ScenarioLoader(SCENARIOS).get("Finish Line")
+    arrivals = ScenarioScheduler(scenario).arrivals
+
+    first_2_hours = sum(value <= 7200 for value in arrivals)
+    final_2_hours = sum(value >= scenario.duration_seconds - 7200 for value in arrivals)
+
+    assert first_2_hours < scenario.runner_count * 0.7
+    assert final_2_hours > 0
+    assert max(arrivals) > scenario.duration_seconds * 0.8
+
+
+@pytest.mark.unit
 def test_scenario_validation_rejects_invalid_bib_range() -> None:
     with pytest.raises(ValueError, match="runner_count exceeds"):
         ScenarioConfig.from_dict({
