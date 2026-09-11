@@ -1,9 +1,11 @@
+import random
 from pathlib import Path
 
 import pytest
 
 from fx90_simulator.simulator.scenario import ScenarioConfig, ScenarioScheduler
 from fx90_simulator.simulator.scenario_loader import ScenarioLoader
+from fx90_simulator.simulator.tag_generator import TagGenerator
 
 
 SCENARIOS = Path(__file__).parents[1] / "src" / "fx90_simulator" / "scenarios"
@@ -68,3 +70,33 @@ def test_scenario_validation_rejects_invalid_bib_range() -> None:
 
     with pytest.raises(ValueError, match="runner_count exceeds"):
         scenario.validate()
+
+
+@pytest.mark.unit
+def test_tag_generator_seed_controls_random_order_and_noise() -> None:
+    first = TagGenerator(1, 500, 500, "random", rng=random.Random(12345))
+    second = TagGenerator(1, 500, 500, "random", rng=random.Random(12345))
+
+    assert first.race_tags() == second.race_tags()
+    assert first.noise_tags == second.noise_tags
+
+
+@pytest.mark.unit
+def test_scenario_noise_is_additive_and_does_not_consume_runner_tags() -> None:
+    scenario = ScenarioLoader(SCENARIOS).get("Start Line")
+    rng = random.Random(scenario.random_seed)
+    generator = TagGenerator(1, 500, 500, "random", rng=rng)
+    remaining = generator.race_tags()
+    runner_tags = []
+    noise_tags = []
+
+    for _ in range(scenario.runner_count):
+        if rng.random() < scenario.noise.percent / 100:
+            noise_tags.append(generator.next_noise_tag())
+        runner_tags.append(generator.next_runner_tag(remaining, True))
+
+    assert len(runner_tags) == 500
+    assert len(set(runner_tags)) == 500
+    assert not remaining
+    assert len(noise_tags) > 0
+    assert set(noise_tags).isdisjoint(runner_tags)
