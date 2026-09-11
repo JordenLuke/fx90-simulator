@@ -176,12 +176,10 @@ class Reader:
         if scenario is None:
             return
         cfg = self.test_config
-        bib_start = cfg.bib_start
-        bib_end = max(cfg.bib_end, bib_start + scenario.runner_count - 1)
         rng = random.Random(scenario.random_seed)
         generator = TagGenerator(
-            bib_start,
-            bib_end,
+            scenario.bib_start,
+            scenario.bib_end,
             scenario.runner_count,
             cfg.tag_order,
             noise_tags=cfg.noise_tags,
@@ -208,9 +206,13 @@ class Reader:
                     if tag_index > 0:
                         gap = burst_arrivals[tag_index] - burst_arrivals[tag_index - 1]
                         await asyncio.sleep(max(0, gap / scenario.time_scale))
+                        if await self._should_disconnect():
+                            return
 
                     if scenario.noise.percent > 0 and rng.random() < scenario.noise.percent / 100:
                         await self._emit_tag(generator, generator.next_noise_tag(), True, 0)
+                        if await self._should_disconnect():
+                            return
                     if not remaining and scenario.report_each_tag_once:
                         return
                     await self._emit_tag(
