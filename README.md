@@ -143,6 +143,8 @@ A selected scenario is started with:
 POST /test/scenario/start
 ```
 
+**API clients must select a scenario before calling `POST /test/scenario/start`.** If no scenario is selected, the start request returns `400 no scenario selected`. The browser control panel performs the selection automatically when you choose a scenario.
+
 Resetting the test clears the selected scenario:
 
 ```text
