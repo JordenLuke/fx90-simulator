@@ -1,0 +1,22 @@
+{
+  "name": "Finish Line",
+  "version": 1,
+  "type": "finish-line",
+  "duration_seconds": 61200,
+  "runner_count": 500,
+  "bib_start": 1,
+  "bib_end": 500,
+  "distribution": {
+    "type": "log-normal"
+  },
+  "burst": {
+    "max_size": 5,
+    "max_duration_seconds": 0.8
+  },
+  "noise": {
+    "percent": 5
+  },
+  "report_each_tag_once": true,
+  "random_seed": 12345,
+  "time_scale": 1
+}
