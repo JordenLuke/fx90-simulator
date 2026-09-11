@@ -47,7 +47,7 @@ def create_test_router(reader: Reader) -> APIRouter:
             else:
                 scenario = ScenarioConfig.from_dict(values)
             reader.set_scenario(scenario)
-        except (KeyError, ValueError, RuntimeError) as exc:
+        except (KeyError, TypeError, ValueError, RuntimeError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return reader.test_status()
 
