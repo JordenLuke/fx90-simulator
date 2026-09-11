@@ -45,7 +45,7 @@
             <div class='field'><label for='noise_percent'>Unknown/noise %</label><input id='noise_percent' type='number' min='0' max='100' step='0.1'></div>
             <div class='field checkbox'><input id='report_each_tag_once' type='checkbox'><label for='report_each_tag_once'>Report each runner tag once</label></div>
         </div>
-        <div class='field' style='margin-top:14px'>
+        <div class='field'>
             <label for='noise_tags'>Custom noise tags (JSON array)</label>
             <textarea id='noise_tags' spellcheck='false' placeholder='[\n  "00000000000000000000015A",\n  "00000000000000000000015B"\n]'></textarea>
             <p class='hint'>Optional. Custom noise reads are consumed once, in list order, then the generated noise pool is used. Tags may be intentionally malformed for parser testing.</p>
@@ -133,6 +133,7 @@ function render(s) {
     document.getElementById('status_json').textContent = JSON.stringify(s, null, 2);
     document.getElementById('start_button').disabled = running;
     document.getElementById('save_button').disabled = running;
+    document.getElementById('scenario').disabled = running;
     document.getElementById('scenario_time_scale').disabled = running || !selectedScenario;
 }
 function showError(message) { document.getElementById('error').textContent = message || ''; }
@@ -141,37 +142,61 @@ function renderScenarioDetails(s) {
     if (!s) { d.textContent = 'Select a scenario to load its configuration. Manual configuration remains available.'; return; }
     d.textContent = `${s.name}: ${s.runner_count} runners over ${s.duration_seconds}s; max burst ${s.burst.max_size}; ${s.distribution.type}.`;
 }
-function loadScenarioList() {
+function syncScenarioSelection(s) {
+    selectedScenario = s || null;
+    const select = document.getElementById('scenario');
+    select.value = s ? s.name : '';
+    if (s) {
+        document.getElementById('scenario_time_scale').value = String(s.time_scale || 1);
+        renderScenarioDetails(s);
+    } else renderScenarioDetails(null);
+}
+function loadScenarioList(currentScenario) {
     return request('/test/scenarios').then(x => {
         scenarios = x.scenarios || [];
         const select = document.getElementById('scenario');
+        while (select.options.length > 1) select.remove(1);
         scenarios.forEach(s => {
             const option = document.createElement('option');
             option.value = s.name; option.textContent = s.name;
             select.appendChild(option);
         });
+        if (currentScenario) {
+            const matching = scenarios.find(s => s.name === currentScenario.name);
+            syncScenarioSelection({...currentScenario, ...(matching || {})});
+        } else syncScenarioSelection(null);
     });
 }
 document.getElementById('scenario').addEventListener('change', async e => {
+    if (!e.target.value) {
+        selectedScenario = null;
+        renderScenarioDetails(null);
+        return;
+    }
+    const previous = selectedScenario;
     try {
-        if (!e.target.value) { selectedScenario = null; renderScenarioDetails(null); return; }
         const scenario = scenarios.find(s => s.name === e.target.value);
-        selectedScenario = scenario;
-        document.getElementById('scenario_time_scale').value = String(scenario.time_scale || 1);
-        renderScenarioDetails(scenario);
-        render(await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:scenario.name})}));
-        showError('');
-    } catch (e) { showError(e.message); }
+        if (!scenario) throw new Error('Scenario not found.');
+        const saved = await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:scenario.name})});
+        syncScenarioSelection(saved.scenario);
+        render(saved); showError('');
+    } catch (e) {
+        syncScenarioSelection(previous);
+        showError(e.message);
+    }
 });
 document.getElementById('scenario_time_scale').addEventListener('change', async e => {
     if (!selectedScenario) return;
+    const previous = selectedScenario;
     try {
-        const scenario = {...selectedScenario, time_scale: Number(e.target.value)};
-        selectedScenario = scenario;
-        renderScenarioDetails(scenario);
-        render(await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:scenario.name, time_scale:scenario.time_scale})}));
-        showError('');
-    } catch (e) { showError(e.message); }
+        const timeScale = Number(e.target.value);
+        const saved = await request('/test/scenario', {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:selectedScenario.name, time_scale:timeScale})});
+        syncScenarioSelection(saved.scenario);
+        render(saved); showError('');
+    } catch (e) {
+        syncScenarioSelection(previous);
+        showError(e.message);
+    }
 });
 async function request(url, options) {
     const r = await fetch(url, options);
@@ -184,10 +209,12 @@ async function load() {
     try {
         const s = await request('/test/status');
         if (!initialized) { setForm(s.config); initialized = true; }
-        if (s.scenario && selectedScenario) {
-            selectedScenario = s.scenario;
-            document.getElementById('scenario_time_scale').value = String(s.scenario.time_scale || 1);
-            renderScenarioDetails(s.scenario);
+        if (!scenarios.length) await loadScenarioList(s.scenario);
+        else if (s.scenario) {
+            const matching = scenarios.find(x => x.name === s.scenario.name);
+            syncScenarioSelection({...s.scenario, ...(matching || {})});
+        } else if (!s.scanning && selectedScenario) {
+            syncScenarioSelection(null);
         }
         render(s); showError('');
     } catch (e) { showError(e.message); }
@@ -213,13 +240,10 @@ async function stop() {
 async function reset() {
     try {
         const s = await request('/test/reset', {method:'POST'});
-        document.getElementById('scenario').value = '';
-        selectedScenario = null;
-        renderScenarioDetails(null);
+        syncScenarioSelection(null);
         render(s); showError('');
     } catch (e) { showError(e.message); }
 }
-loadScenarioList().catch(e => showError(e.message));
 load();
 setInterval(load, 1000);
 </script>
