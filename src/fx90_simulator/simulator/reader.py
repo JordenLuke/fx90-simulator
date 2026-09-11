@@ -196,13 +196,18 @@ class Reader:
                 count, arrival = scheduler.next_burst(index)
                 await asyncio.sleep(max(0, (arrival - previous) / scenario.time_scale))
                 previous = arrival
-                for _ in range(count):
+                burst_arrivals = scheduler.arrivals[index:index + count]
+                for tag_index, _arrival in enumerate(burst_arrivals):
                     if not self.radio_active:
                         return
                     if not remaining and scenario.report_each_tag_once:
                         return
                     if await self._should_disconnect():
                         return
+
+                    if tag_index > 0:
+                        gap = burst_arrivals[tag_index] - burst_arrivals[tag_index - 1]
+                        await asyncio.sleep(max(0, gap / scenario.time_scale))
 
                     if scenario.noise.percent > 0 and rng.random() < scenario.noise.percent / 100:
                         await self._emit_tag(generator, generator.next_noise_tag(), True, 0)
@@ -215,6 +220,7 @@ class Reader:
                         0,
                     )
                 index += count
+                previous = burst_arrivals[-1]
             if self.radio_active:
                 await asyncio.sleep(max(0, (scenario.duration_seconds - previous) / scenario.time_scale))
                 logger.info("[FX90] SCENARIO COMPLETE | name=%s sent=%d good=%d noise=%d", scenario.name, self._tags_sent, self._good_tags_sent, self._noise_tags_sent)
