@@ -40,7 +40,7 @@ class ScenarioConfig:
     def validate(self) -> None:
         if self.version != 1:
             raise ValueError("unsupported scenario version")
-        if self.duration_seconds <= 0:
+        if not math.isfinite(self.duration_seconds) or self.duration_seconds <= 0:
             raise ValueError("scenario duration must be greater than 0")
         if self.runner_count < 1:
             raise ValueError("runner_count must be at least 1")
@@ -58,13 +58,22 @@ class ScenarioConfig:
             raise ValueError("burst max_duration_seconds must be >= 0")
         if not 0 <= self.noise.percent <= 100:
             raise ValueError("noise percent must be between 0 and 100")
-        if self.time_scale <= 0:
+        if not math.isfinite(self.time_scale) or self.time_scale <= 0:
             raise ValueError("time_scale must be greater than 0")
+        if self.random_seed is None or isinstance(self.random_seed, bool) or not isinstance(self.random_seed, int):
+            raise ValueError("random_seed must be an integer")
         if self.distribution.type == "truncated-normal":
-            if self.distribution.center_seconds is None or self.distribution.spread_seconds is None:
+            center = self.distribution.center_seconds
+            spread = self.distribution.spread_seconds
+            if center is None or spread is None:
                 raise ValueError("truncated-normal requires center_seconds and spread_seconds")
-            if self.distribution.spread_seconds <= 0:
+            if not math.isfinite(center):
+                raise ValueError("center_seconds must be finite")
+            if not math.isfinite(spread) or spread <= 0:
                 raise ValueError("spread_seconds must be greater than 0")
+            distance = min(abs(center), abs(center - self.duration_seconds)) if center < 0 or center > self.duration_seconds else 0
+            if distance > 8 * spread:
+                raise ValueError("truncated-normal distribution has negligible probability within scenario duration")
 
     @classmethod
     def from_dict(cls, data: dict) -> "ScenarioConfig":
@@ -140,10 +149,14 @@ class ScenarioScheduler:
             center = distribution.center_seconds or 0
             spread = distribution.spread_seconds or 1
             values = []
-            while len(values) < count:
-                value = self.rng.gauss(center, spread)
-                if 0 <= value <= duration:
-                    values.append(value)
+            for _ in range(count):
+                for _attempt in range(10_000):
+                    value = self.rng.gauss(center, spread)
+                    if 0 <= value <= duration:
+                        values.append(value)
+                        break
+                else:
+                    raise ValueError("unable to sample truncated-normal distribution within scenario duration")
         else:
             mu = math.log(max(duration * 0.35, 1))
             sigma = 1.0
