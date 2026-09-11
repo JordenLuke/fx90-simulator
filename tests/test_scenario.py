@@ -51,25 +51,23 @@ def test_burst_never_exceeds_configured_maximum() -> None:
 
 @pytest.mark.unit
 def test_scenario_validation_rejects_invalid_bib_range() -> None:
-    scenario = ScenarioConfig.from_dict({
-        "name": "Invalid",
-        "version": 1,
-        "type": "custom",
-        "duration_seconds": 10,
-        "runner_count": 2,
-        "bib_start": 1,
-        "bib_end": 1,
-        "distribution": {
-            "type": "truncated-normal",
-            "center_seconds": 5,
-            "spread_seconds": 1,
-        },
-        "burst": {"max_size": 1, "max_duration_seconds": 0.1},
-        "noise": {"percent": 0},
-    })
-
     with pytest.raises(ValueError, match="runner_count exceeds"):
-        scenario.validate()
+        ScenarioConfig.from_dict({
+            "name": "Invalid",
+            "version": 1,
+            "type": "custom",
+            "duration_seconds": 10,
+            "runner_count": 2,
+            "bib_start": 1,
+            "bib_end": 1,
+            "distribution": {
+                "type": "truncated-normal",
+                "center_seconds": 5,
+                "spread_seconds": 1,
+            },
+            "burst": {"max_size": 1, "max_duration_seconds": 0.1},
+            "noise": {"percent": 0},
+        })
 
 
 @pytest.mark.unit
