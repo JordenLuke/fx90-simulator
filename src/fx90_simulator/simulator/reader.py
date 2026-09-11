@@ -173,11 +173,20 @@ class Reader:
 
     async def _generate_scenario(self) -> None:
         scenario = self.scenario
-        if scenario is None: return
+        if scenario is None:
+            return
         cfg = self.test_config
         bib_start = cfg.bib_start
         bib_end = max(cfg.bib_end, bib_start + scenario.runner_count - 1)
-        generator = TagGenerator(bib_start, bib_end, scenario.runner_count, cfg.tag_order, noise_tags=cfg.noise_tags)
+        rng = random.Random(scenario.random_seed)
+        generator = TagGenerator(
+            bib_start,
+            bib_end,
+            scenario.runner_count,
+            cfg.tag_order,
+            noise_tags=cfg.noise_tags,
+            rng=rng,
+        )
         remaining = generator.race_tags()
         scheduler = ScenarioScheduler(scenario)
         previous = 0.0
@@ -188,11 +197,23 @@ class Reader:
                 await asyncio.sleep(max(0, (arrival - previous) / scenario.time_scale))
                 previous = arrival
                 for _ in range(count):
-                    if not self.radio_active: return
-                    if not remaining and scenario.report_each_tag_once: return
-                    if await self._should_disconnect(): return
-                    tag_id, is_noise = generator.next_tag(remaining, cfg.noise_percent, scenario.report_each_tag_once)
-                    await self._emit_tag(generator, tag_id, is_noise, 0)
+                    if not self.radio_active:
+                        return
+                    if not remaining and scenario.report_each_tag_once:
+                        return
+                    if await self._should_disconnect():
+                        return
+
+                    if scenario.noise.percent > 0 and rng.random() < scenario.noise.percent / 100:
+                        await self._emit_tag(generator, generator.next_noise_tag(), True, 0)
+                    if not remaining and scenario.report_each_tag_once:
+                        return
+                    await self._emit_tag(
+                        generator,
+                        generator.next_runner_tag(remaining, scenario.report_each_tag_once),
+                        False,
+                        0,
+                    )
                 index += count
             if self.radio_active:
                 await asyncio.sleep(max(0, (scenario.duration_seconds - previous) / scenario.time_scale))
