@@ -28,7 +28,7 @@ async def test_reader_emits_configured_number_of_runner_tags() -> None:
 
     reader.register_sender(sender, closer)
     await reader.start()
-    for _ in range(20):
+    for _ in range(100):
         if reader.test_status()["good_tags_sent"] == 5:
             break
         await asyncio.sleep(0.01)

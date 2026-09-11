@@ -1,0 +1,24 @@
+{
+  "name": "Short Burst",
+  "version": 1,
+  "type": "short-burst",
+  "duration_seconds": 60,
+  "runner_count": 50,
+  "bib_start": 1,
+  "bib_end": 50,
+  "distribution": {
+    "type": "truncated-normal",
+    "center_seconds": 30,
+    "spread_seconds": 10
+  },
+  "burst": {
+    "max_size": 20,
+    "max_duration_seconds": 0.8
+  },
+  "noise": {
+    "percent": 5
+  },
+  "report_each_tag_once": true,
+  "random_seed": 12345,
+  "time_scale": 1
+}

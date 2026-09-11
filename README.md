@@ -51,10 +51,103 @@ It provides:
 - **Custom noise tags** supplied as a JSON array
 - **Burst configuration** for burst size, duration, time between bursts, and artificial tag delay
 - **Failure injection** for WebSocket disconnects after a tag count or elapsed time
+- **Scenario selection and time acceleration** for long-duration race simulations
 - **Start, stop, save, and reset controls**
 - **Diagnostic JSON** containing the complete current test state
 
 Settings are runtime-only and can only be changed while the simulated reader is stopped.
+
+### Scenario simulation
+
+Scenario simulation is designed for longer, repeatable race-day traffic patterns that are difficult to reproduce with simple burst settings. Scenarios are versioned JSON definitions stored under `src/fx90_simulator/scenarios/` and are loaded by name through the test API and control panel.
+
+Built-in scenarios currently include:
+
+| Scenario | Purpose | Duration | Runners | Burst max | Distribution |
+|---|---|---:|---:|---:|---|
+| **Start Line** | Heavy early race-start traffic with a long tail | 1 hour | 500 | 20 | Truncated normal |
+| **Finish Line** | Intermittent finish traffic with a long tail | 17 hours | 500 | 5 | Log-normal |
+| **Short Burst** | Fast development/integration scenario | 60 seconds | 50 | 20 | Truncated normal |
+
+The scenario configuration is the source of truth for the traffic schedule. Each scenario has a deterministic `random_seed`, so the same configuration produces the same arrival schedule. Runner tags remain unique when `report_each_tag_once` is enabled.
+
+Scenario noise is **additive**: configured noise events are inserted in addition to the scheduled runner reads rather than replacing them. This means a 500-runner scenario still delivers all 500 legitimate runner tags even when noise is enabled.
+
+The control panel provides four time-scale choices:
+
+```text
+1x    normal simulated time
+10x   ten times faster
+60x   sixty times faster
+600x  six hundred times faster
+```
+
+For example, the one-hour Start Line scenario completes in about one minute at 60×, while the 17-hour Finish Line scenario completes in about 1.7 minutes at 600×.
+
+Within a scenario burst, the scheduled arrival spacing is also scaled by `time_scale`. The configured `max_duration_seconds` therefore represents actual simulated spacing between events, not just a grouping hint.
+
+### Scenario JSON format
+
+A scenario definition has this general shape:
+
+```json
+{
+  "name": "Start Line",
+  "version": 1,
+  "type": "start-line",
+  "duration_seconds": 3600,
+  "runner_count": 500,
+  "bib_start": 1,
+  "bib_end": 500,
+  "distribution": {
+    "type": "truncated-normal",
+    "center_seconds": 480,
+    "spread_seconds": 720
+  },
+  "burst": {
+    "max_size": 20,
+    "max_duration_seconds": 0.8
+  },
+  "noise": {
+    "percent": 5
+  },
+  "report_each_tag_once": true,
+  "random_seed": 12345,
+  "time_scale": 1
+}
+```
+
+Supported arrival distributions are `truncated-normal` and `log-normal`. Burst settings limit how many scheduled arrivals may be grouped together and the maximum simulated duration of that burst. Scenario validation also ensures bib numbers fit the four-digit decimal RFID representation and that the configured runner count fits the bib range.
+
+To inspect the available scenarios through the API:
+
+```text
+GET /test/scenarios
+```
+
+To select a built-in scenario:
+
+```text
+PUT /test/scenario
+```
+
+with a body such as:
+
+```json
+{"name":"Start Line"}
+```
+
+A selected scenario is started with:
+
+```text
+POST /test/scenario/start
+```
+
+Resetting the test clears the selected scenario:
+
+```text
+POST /test/reset
+```
 
 ### Custom noise tags
 
@@ -75,12 +168,13 @@ The **Custom noise remaining** counter shows how many supplied values are still 
 ### Suggested test workflow
 
 1. Open `/test/` in a browser.
-2. Configure the race, burst, noise, and failure-injection settings.
-3. Click **Save Settings**.
-4. Connect Ultra Tracker to the harness.
-5. Click **Start Scan**.
-6. Watch the live counters and WebSocket client count.
-7. Use **Stop Scan** or **Reset** before changing the configuration.
+2. For a normal race simulation, select a built-in scenario and choose a time scale.
+3. For short/manual tests, configure the race, burst, noise, and failure-injection settings instead.
+4. Click **Save Settings** when using manual settings.
+5. Connect Ultra Tracker to the harness.
+6. Click **Start Scan** or **Start Scenario**.
+7. Watch the live counters and WebSocket client count.
+8. Use **Stop Scan** or **Reset** before changing the configuration.
 
 For example, setting `disconnect_after_tags` to `190` deliberately closes the WebSocket after approximately 190 delivered events, allowing Ultra Tracker reconnect and recovery behavior to be tested against a repeatable failure.
 
@@ -88,8 +182,11 @@ The test control API is also available directly:
 
 ```text
 GET  /test/status
+GET  /test/scenarios
 PUT  /test/config
+PUT  /test/scenario
 POST /test/start
+POST /test/scenario/start
 POST /test/stop
 POST /test/reset
 GET  /test/
@@ -113,6 +210,8 @@ pytest -m stress
 ```
 
 The `stress` marker is reserved for tests that intentionally generate large or high-volume traffic so those tests do not have to run on every small code change.
+
+Scenario tests cover built-in scenario loading, deterministic scheduling, duration bounds, burst limits, bib-range validation, deterministic tag generation, and additive scenario noise behavior.
 
 ## Zebra FXR90 / Ultra Tracker contract
 
@@ -183,7 +282,8 @@ The harness also supports deliberate WebSocket disconnects and artificial delive
 fx90-simulator/
 ├── src/fx90_simulator/
 │   ├── api/          # REST, WebSocket, and test-control interfaces
-│   ├── simulator/    # Simulated reader, test controls, and tag generation
+│   ├── simulator/    # Simulated reader, scenarios, test controls, and tag generation
+│   ├── scenarios/    # Versioned built-in scenario JSON definitions
 │   ├── config.py     # Environment-based configuration
 │   └── main.py       # Application entry point
 ├── tests/            # Automated unit and integration tests
