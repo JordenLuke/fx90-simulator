@@ -163,7 +163,7 @@ function loadScenarioList(currentScenario) {
         });
         if (currentScenario) {
             const matching = scenarios.find(s => s.name === currentScenario.name);
-            syncScenarioSelection({...currentScenario, ...(matching || {})});
+            syncScenarioSelection({...matching, ...currentScenario});
         } else syncScenarioSelection(null);
     });
 }
@@ -212,7 +212,7 @@ async function load() {
         if (!scenarios.length) await loadScenarioList(s.scenario);
         else if (s.scenario) {
             const matching = scenarios.find(x => x.name === s.scenario.name);
-            syncScenarioSelection({...s.scenario, ...(matching || {})});
+            syncScenarioSelection({...matching, ...s.scenario});
         } else if (!s.scanning && selectedScenario) {
             syncScenarioSelection(null);
         }
