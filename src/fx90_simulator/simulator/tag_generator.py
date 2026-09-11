@@ -38,7 +38,7 @@ class TagGenerator:
             tag = "".join(self.rng.choice(self.HEX_CHARS) for _ in range(self.TAG_LENGTH))
             if tag not in runner_tags:
                 tags.add(tag)
-        return list(tags)
+        return sorted(tags)
 
     def race_tags(self) -> list[str]:
         tags = self.bibs[: self.runner_count]
