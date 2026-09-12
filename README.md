@@ -425,3 +425,7 @@ Captured data is stored under `data/`.
 ## Security notes
 
 This harness is intended for controlled test networks. The default credentials are development defaults and should be changed before exposing the harness to an untrusted network.
+
+## License
+
+[MIT](https://opensource.org/license/mit) ©2026
